@@ -1,0 +1,208 @@
+name: Deploy Application
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'terraform/**'
+      - '.github/workflows/terraform.yml'
+      - '**.md'
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - 'terraform/**'
+      - '.github/workflows/terraform.yml'
+      - '**.md'
+  repository_dispatch:
+    types: [infrastructure-updated]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag to deploy'
+        required: false
+        default: 'latest'
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: us-central1
+  REPOSITORY: docker
+  IMAGE: ${{ secrets.GCP_PROJECT_ID }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/docker/solana-trading-bot
+
+jobs:
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    if: github.event_name != 'repository_dispatch'
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    outputs:
+      image_tag: ${{ steps.image.outputs.tag }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+        service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Configure Docker for Artifact Registry
+      run: gcloud auth configure-docker $REGION-docker.pkg.dev
+
+    - name: Set image tag
+      id: image
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.image_tag }}" ]; then
+          echo "tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+        else
+          echo "tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Build Docker image
+      run: |
+        docker build -t $IMAGE:${{ steps.image.outputs.tag }} .
+        docker tag $IMAGE:${{ steps.image.outputs.tag }} $IMAGE:latest
+
+    - name: Push Docker image
+      if: github.event_name != 'pull_request'
+      run: |
+        docker push $IMAGE:${{ steps.image.outputs.tag }}
+        docker push $IMAGE:latest
+
+  deploy:
+    name: Deploy to Cloud Run
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.event_name != 'pull_request'
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+        service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Get Terraform outputs
+      id: terraform
+      run: |
+        # Get the Cloud Run service name from Terraform
+        SERVICE_NAME=$(gcloud run services list --region=$REGION --format="value(name)" --filter="labels.app=solana-trading-bot AND labels.environment=production" | head -n1)
+        
+        if [ -z "$SERVICE_NAME" ]; then
+          echo "Error: Could not find Cloud Run service. Ensure Terraform has been applied."
+          exit 1
+        fi
+        
+        echo "service_name=$SERVICE_NAME" >> $GITHUB_OUTPUT
+
+    - name: Deploy Firestore rules
+      run: |
+        if [ -f "firestore.rules" ]; then
+          gcloud firestore databases update (default) --type=firestore-native || echo "Firestore already configured"
+          gsutil cp firestore.rules gs://$PROJECT_ID.appspot.com/firestore.rules || echo "Failed to upload rules"
+        fi
+
+    - name: Deploy to Cloud Run
+      id: deploy
+      run: |
+        IMAGE_TAG="${{ needs.build.outputs.image_tag || github.event.client_payload.ref || 'latest' }}"
+        
+        gcloud run deploy ${{ steps.terraform.outputs.service_name }} \
+          --image $IMAGE:$IMAGE_TAG \
+          --region $REGION \
+          --platform managed
+
+        # Get the service URL
+        URL=$(gcloud run services describe ${{ steps.terraform.outputs.service_name }} \
+          --region $REGION \
+          --format 'value(status.url)')
+        
+        echo "url=$URL" >> $GITHUB_OUTPUT
+
+    - name: Verify deployment
+      run: |
+        echo "Deployment completed!"
+        echo "Service URL: ${{ steps.deploy.outputs.url }}"
+        
+        # Wait for service to be ready
+        sleep 10
+        
+        # Health check
+        response=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.deploy.outputs.url }}/health")
+        if [ "$response" -eq 200 ]; then
+          echo "Health check passed!"
+        else
+          echo "Health check failed with status: $response"
+          exit 1
+        fi
+
+    - name: Update Cloud Scheduler
+      if: success()
+      run: |
+        SCHEDULER_JOB=$(gcloud scheduler jobs list --location=$REGION --format="value(name)" --filter="labels.app=solana-trading-bot AND labels.environment=production" | head -n1)
+        
+        if [ -n "$SCHEDULER_JOB" ]; then
+          # Update the scheduler job with the new service URL
+          gcloud scheduler jobs update http $SCHEDULER_JOB \
+            --location $REGION \
+            --uri "${{ steps.deploy.outputs.url }}/trigger"
+          
+          echo "Updated Cloud Scheduler job: $SCHEDULER_JOB"
+        else
+          echo "Warning: Could not find Cloud Scheduler job"
+        fi
+
+  deploy-from-dispatch:
+    name: Deploy from Infrastructure Update
+    runs-on: ubuntu-latest
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'infrastructure-updated'
+    
+    permissions:
+      contents: read
+      id-token: write
+
+    environment:
+      name: production
+      url: ${{ github.event.client_payload.cloud_run_url }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.client_payload.ref }}
+
+    - name: Deploy application
+      run: |
+        echo "Infrastructure has been updated. Triggering application deployment..."
+        echo "Cloud Run URL: ${{ github.event.client_payload.cloud_run_url }}"
+        
+    - name: Trigger build and deploy
+      uses: peter-evans/repository-dispatch@v2
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        event-type: deploy-application
+        client-payload: '{"ref": "${{ github.event.client_payload.ref }}"}'

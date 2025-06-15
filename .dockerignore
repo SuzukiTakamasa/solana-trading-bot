@@ -1,0 +1,11 @@
+target/
+.git/
+.gitignore
+*.md
+.env
+.env.*
+Dockerfile
+.dockerignore
+*.log
+*.tmp
+.DS_Store

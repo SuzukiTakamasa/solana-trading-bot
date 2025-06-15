@@ -1,0 +1,322 @@
+mod config;
+mod firestore;
+mod jupiter;
+mod line_bot;
+mod trading;
+mod wallet;
+
+use anyhow::Result;
+use axum::{extract::Query, response::IntoResponse, routing::get, Json, Router};
+use futures::stream::StreamExt;
+use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::time::{interval, Duration};
+use tracing::{info, error};
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Initialize tracing
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "solana_trading_bot=info".into()),
+        )
+        .init();
+
+    // Load configuration
+    let config = config::Config::from_env()?;
+    info!("Configuration loaded successfully");
+
+    // Start HTTP server for Cloud Run health checks
+    let app = Router::new()
+        .route("/", get(health_check))
+        .route("/health", get(health_check))
+        .route("/trigger", get(trigger_trade))
+        .route("/api/performance", get(get_performance))
+        .route("/api/price-history", get(get_price_history))
+        .route("/api/trading-sessions", get(get_trading_sessions));
+
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
+    info!("Starting server on {}", addr);
+
+    // Spawn the HTTP server
+    let server = tokio::spawn(async move {
+        let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+        axum::serve(listener, app).await.unwrap();
+    });
+
+    // Start trading bot if not in server-only mode
+    if !config.server_only {
+        let trading_bot = tokio::spawn(async move {
+            if let Err(e) = run_trading_bot().await {
+                error!("Trading bot error: {}", e);
+            }
+        });
+
+        // Wait for either task to complete
+        tokio::select! {
+            _ = server => {},
+            _ = trading_bot => {},
+        }
+    } else {
+        // Just run the server
+        server.await?;
+    }
+
+    Ok(())
+}
+
+async fn health_check() -> impl IntoResponse {
+    "OK"
+}
+
+async fn trigger_trade() -> impl IntoResponse {
+    info!("Trade trigger received");
+    
+    // Spawn a task to handle the trade
+    tokio::spawn(async {
+        if let Err(e) = execute_single_trade().await {
+            error!("Trade execution error: {}", e);
+        }
+    });
+    
+    "Trade triggered"
+}
+
+async fn execute_single_trade() -> Result<()> {
+    let config = config::Config::from_env()?;
+    let wallet = wallet::Wallet::new(&config.private_key)?;
+    let line_client = line_bot::LineClient::new(&config.line_channel_token);
+    
+    // Initialize Firestore if configured
+    let firestore = match firestore::FirestoreDb::new(config.gcp_project_id.clone()).await {
+        Ok(db) => Some(Arc::new(db)),
+        Err(e) => {
+            error!("Failed to initialize Firestore: {}", e);
+            None
+        }
+    };
+    
+    // Initialize trading state with persistent storage
+    let mut state = trading::TradingState::new();
+    if let Some(db) = firestore.clone() {
+        state = state.with_firestore(db);
+        state.load_from_firestore().await?;
+    }
+    
+    let profit = trading::check_and_trade(&wallet, &config, &mut state).await?;
+    
+    if let Some(p) = profit {
+        let message = format!("Trade executed! Position: {}, Profit: {} USDC", state.position, p);
+        line_client.send_message(&config.line_user_id, &message).await?;
+    }
+    
+    Ok(())
+}
+
+async fn run_trading_bot() -> Result<()> {
+    info!("Starting trading bot");
+
+    // Load configuration
+    let config = config::Config::from_env()?;
+    
+    // Initialize wallet
+    let wallet = wallet::Wallet::new(&config.private_key)?;
+    info!("Wallet initialized: {}", wallet.pubkey());
+
+    // Initialize LINE bot client
+    let line_client = line_bot::LineClient::new(&config.line_channel_token);
+    
+    // Initialize Firestore
+    let firestore = match firestore::FirestoreDb::new(config.gcp_project_id.clone()).await {
+        Ok(db) => {
+            info!("Firestore initialized successfully");
+            Some(Arc::new(db))
+        }
+        Err(e) => {
+            error!("Failed to initialize Firestore: {}", e);
+            line_client.send_error_notification(&config.line_user_id, &format!("Firestore initialization failed: {}", e)).await?;
+            None
+        }
+    };
+
+    // Initialize trading state with persistent storage
+    let mut state = trading::TradingState::new();
+    if let Some(db) = firestore.clone() {
+        state = state.with_firestore(db.clone());
+        if let Err(e) = state.load_from_firestore().await {
+            error!("Failed to load trading state from Firestore: {}", e);
+        }
+        
+        // Schedule periodic cleanup of old data
+        let cleanup_db = db.clone();
+        let cleanup_config = config.clone();
+        tokio::spawn(async move {
+            let mut cleanup_interval = interval(Duration::from_secs(86400)); // 24 hours
+            loop {
+                cleanup_interval.tick().await;
+                if let Err(e) = cleanup_db.cleanup_old_data(cleanup_config.data_retention_days).await {
+                    error!("Failed to cleanup old data: {}", e);
+                }
+            }
+        });
+    }
+
+    // Initial swap: SOL -> USDC (only if starting fresh)
+    if state.total_trades == 0 {
+        info!("Performing initial swap: SOL -> USDC");
+        match trading::perform_initial_swap(&wallet, &config).await {
+            Ok(_) => {
+                line_client.send_startup_notification(&config.line_user_id, &wallet.pubkey().to_string()).await?;
+            }
+            Err(e) => {
+                line_client.send_error_notification(&config.line_user_id, &format!("{}", e)).await?;
+            }
+        }
+    } else {
+        info!("Resuming bot with {} previous trades", state.total_trades);
+        let message = format!("Trading bot resumed: {} trades executed, {} USDC profit", 
+            state.total_trades, state.total_profit_usdc);
+        line_client.send_message(&config.line_user_id, &message).await?;
+    }
+
+    // Start hourly trading loop
+    let mut interval = interval(Duration::from_secs(3600)); // 1 hour
+
+    loop {
+        interval.tick().await;
+        
+        info!("Checking prices for trading opportunity");
+        
+        match trading::check_and_trade(&wallet, &config, &mut state).await {
+            Ok(Some(profit)) => {
+                let message = format!(
+                    "Trade executed! Position: {}, Profit: {} USDC, Total: {} USDC",
+                    state.position, profit, state.total_profit_usdc
+                );
+                info!("{}", message);
+                line_client.send_message(&config.line_user_id, &message).await?;
+            }
+            Ok(None) => {
+                info!("No trading opportunity found");
+            }
+            Err(e) => {
+                error!("Trading error: {}", e);
+                line_client.send_message(
+                    &config.line_user_id,
+                    &format!("Trading error: {}", e)
+                ).await?;
+            }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct PerformanceQuery {
+    days: Option<u32>,
+}
+
+#[derive(Serialize)]
+struct PerformanceResponse {
+    total_trades: i64,
+    winning_trades: i64,
+    losing_trades: i64,
+    total_profit_loss: String,
+    total_gas_fees: String,
+    win_rate: String,
+    period_days: u32,
+}
+
+async fn get_performance(Query(params): Query<PerformanceQuery>) -> impl IntoResponse {
+    let days = params.days.unwrap_or(30);
+    
+    match get_trading_performance_internal(days).await {
+        Ok(performance) => Json(PerformanceResponse {
+            total_trades: performance.total_trades,
+            winning_trades: performance.winning_trades,
+            losing_trades: performance.losing_trades,
+            total_profit_loss: performance.total_profit_loss.to_string(),
+            total_gas_fees: performance.total_gas_fees.to_string(),
+            win_rate: format!("{:.2}%", performance.win_rate),
+            period_days: performance.period_days,
+        }).into_response(),
+        Err(e) => {
+            error!("Failed to get performance data: {}", e);
+            format!("Error: {}", e).into_response()
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct PriceHistoryQuery {
+    hours: Option<u32>,
+}
+
+async fn get_price_history(Query(params): Query<PriceHistoryQuery>) -> impl IntoResponse {
+    let hours = params.hours.unwrap_or(24);
+    
+    match get_price_history_internal(hours).await {
+        Ok(prices) => Json(prices).into_response(),
+        Err(e) => {
+            error!("Failed to get price history: {}", e);
+            format!("Error: {}", e).into_response()
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct TradingSessionsQuery {
+    limit: Option<u32>,
+}
+
+async fn get_trading_sessions(Query(params): Query<TradingSessionsQuery>) -> impl IntoResponse {
+    let limit = params.limit.unwrap_or(50);
+    
+    match get_trading_sessions_internal(limit).await {
+        Ok(sessions) => Json(sessions).into_response(),
+        Err(e) => {
+            error!("Failed to get trading sessions: {}", e);
+            format!("Error: {}", e).into_response()
+        }
+    }
+}
+
+async fn get_trading_performance_internal(days: u32) -> Result<firestore::TradingPerformance> {
+    let config = config::Config::from_env()?;
+    let db = firestore::FirestoreDb::new(config.gcp_project_id).await?;
+    db.get_trading_performance(days).await
+}
+
+async fn get_price_history_internal(hours: u32) -> Result<Vec<firestore::PriceHistory>> {
+    let config = config::Config::from_env()?;
+    let db = firestore::FirestoreDb::new(config.gcp_project_id).await?;
+    db.get_price_history(hours).await
+}
+
+async fn get_trading_sessions_internal(limit: u32) -> Result<Vec<firestore::TradingSession>> {
+    let config = config::Config::from_env()?;
+    let db = firestore::FirestoreDb::new(config.gcp_project_id).await?;
+    
+    // Get all trading sessions from Firestore and sort them manually
+    let mut sessions = Vec::new();
+    let mut stream = firestore_db_and_auth::documents::list::<firestore::TradingSession, _>(&db.session, "trading_sessions");
+    
+    while let Some(doc_result) = stream.next().await {
+        match doc_result {
+            Ok((session, _)) => {
+                sessions.push(session);
+            },
+            Err(e) => {
+                error!("Error reading trading session document: {}", e);
+                continue;
+            }
+        }
+    }
+    
+    // Sort by timestamp descending and limit
+    sessions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    sessions.truncate(limit as usize);
+    
+    Ok(sessions)
+}
