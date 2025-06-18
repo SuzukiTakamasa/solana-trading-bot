@@ -20,7 +20,7 @@ resource "google_artifact_registry_repository" "registry" {
   repository_id = var.repository_name
   description   = "Docker repository for ${var.app_name}"
   format        = "DOCKER"
-  
+
   labels = var.labels
 }
 
@@ -51,12 +51,12 @@ resource "null_resource" "docker_build_push" {
       docker push ${local.image_uri}:${var.image_tag}
       docker push ${local.image_uri}:latest
     EOT
-    
+
     environment = {
       DOCKER_BUILDKIT = "1"
     }
   }
-  
+
   depends_on = [
     google_artifact_registry_repository.registry,
     google_artifact_registry_repository_iam_member.cloud_build_writer
@@ -65,19 +65,19 @@ resource "null_resource" "docker_build_push" {
 
 resource "google_cloudbuild_trigger" "docker_build" {
   count = var.enable_cloud_build ? 1 : 0
-  
+
   name        = "${var.app_name}-docker-build"
   description = "Build and push Docker image for ${var.app_name}"
-  
+
   github {
     owner = var.github_owner
     name  = var.github_repo
-    
+
     push {
       branch = var.trigger_branch
     }
   }
-  
+
   build {
     step {
       name = "gcr.io/cloud-builders/docker"
@@ -88,16 +88,16 @@ resource "google_cloudbuild_trigger" "docker_build" {
         "."
       ]
     }
-    
+
     step {
       name = "gcr.io/cloud-builders/docker"
       args = ["push", "--all-tags", local.image_uri]
     }
-    
+
     options {
       logging = "CLOUD_LOGGING_ONLY"
     }
   }
-  
+
   service_account = var.service_account_email
 }

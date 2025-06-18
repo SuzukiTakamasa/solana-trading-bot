@@ -7,7 +7,7 @@ resource "google_artifact_registry_repository" "app_repo" {
   repository_id = var.app_name
   description   = "Docker repository for ${var.app_name}"
   format        = "DOCKER"
-  
+
   labels = var.labels
 }
 
@@ -18,7 +18,7 @@ resource "google_cloud_run_v2_service" "app" {
 
   template {
     service_account = var.service_account_email
-    
+
     scaling {
       min_instance_count = var.min_instances
       max_instance_count = var.max_instances
@@ -34,8 +34,8 @@ resource "google_cloud_run_v2_service" "app" {
           cpu    = var.cpu
           memory = var.memory
         }
-        
-        cpu_idle = true
+
+        cpu_idle          = true
         startup_cpu_boost = true
       }
 
@@ -69,7 +69,7 @@ resource "google_cloud_run_v2_service" "app" {
         timeout_seconds       = 3
         period_seconds        = 10
         failure_threshold     = 3
-        
+
         http_get {
           path = "/health"
           port = 8080
@@ -81,14 +81,14 @@ resource "google_cloud_run_v2_service" "app" {
         timeout_seconds       = 3
         period_seconds        = 30
         failure_threshold     = 3
-        
+
         http_get {
           path = "/health"
           port = 8080
         }
       }
     }
-    
+
     labels = var.labels
   }
 
@@ -96,7 +96,7 @@ resource "google_cloud_run_v2_service" "app" {
     type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
     percent = 100
   }
-  
+
   labels = var.labels
 
   lifecycle {

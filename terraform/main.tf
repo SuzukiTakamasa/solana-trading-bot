@@ -7,10 +7,10 @@ locals {
     },
     var.labels
   )
-  
-  service_name        = "${var.app_name}-${var.environment}"
-  service_account_id  = "${var.app_name}-sa-${var.environment}"
-  scheduler_job_name  = "${var.app_name}-scheduler-${var.environment}"
+
+  service_name       = "${var.app_name}-${var.environment}"
+  service_account_id = "${var.app_name}-sa-${var.environment}"
+  scheduler_job_name = "${var.app_name}-scheduler-${var.environment}"
 }
 
 data "google_project" "project" {
@@ -44,9 +44,9 @@ module "service_accounts" {
 
   project_id         = var.project_id
   environment        = var.environment
-  app_name          = var.app_name
+  app_name           = var.app_name
   service_account_id = local.service_account_id
-  labels            = local.common_labels
+  labels             = local.common_labels
 
   depends_on = [google_project_service.required_apis]
 }
@@ -54,36 +54,36 @@ module "service_accounts" {
 # Workload Identity Federation for GitHub Actions
 resource "google_iam_workload_identity_pool" "github" {
   provider = google-beta
-  
+
   workload_identity_pool_id = "github-actions-pool"
   display_name              = "GitHub Actions Pool"
-  description              = "Workload Identity Pool for GitHub Actions"
-  disabled                 = false
-  
+  description               = "Workload Identity Pool for GitHub Actions"
+  disabled                  = false
+
   project = var.project_id
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
   provider = google-beta
-  
+
   workload_identity_pool_id          = google_iam_workload_identity_pool.github.workload_identity_pool_id
   workload_identity_pool_provider_id = "github-actions-provider"
   display_name                       = "GitHub Actions Provider"
-  description                       = "OIDC provider for GitHub Actions"
-  
+  description                        = "OIDC provider for GitHub Actions"
+
   attribute_mapping = {
-    "google.subject"       = "assertion.sub"
-    "attribute.actor"      = "assertion.actor"
-    "attribute.repository" = "assertion.repository"
+    "google.subject"             = "assertion.sub"
+    "attribute.actor"            = "assertion.actor"
+    "attribute.repository"       = "assertion.repository"
     "attribute.repository_owner" = "assertion.repository_owner"
   }
-  
+
   attribute_condition = "assertion.repository == '${var.github_repository}'"
-  
+
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
   }
-  
+
   project = var.project_id
 }
 
@@ -114,7 +114,7 @@ resource "google_project_iam_member" "github_actions_permissions" {
     "roles/logging.viewer",
     "roles/monitoring.viewer"
   ])
-  
+
   project = var.project_id
   role    = each.value
   member  = "serviceAccount:${google_service_account.github_actions.email}"
@@ -123,11 +123,11 @@ resource "google_project_iam_member" "github_actions_permissions" {
 module "secret_manager" {
   source = "./modules/secret-manager"
 
-  project_id     = var.project_id
-  environment    = var.environment
-  app_name       = var.app_name
-  labels         = local.common_labels
-  
+  project_id  = var.project_id
+  environment = var.environment
+  app_name    = var.app_name
+  labels      = local.common_labels
+
   service_account_email = module.service_accounts.cloud_run_service_account_email
 
   depends_on = [
@@ -166,7 +166,7 @@ module "firestore" {
   environment = var.environment
   app_name    = var.app_name
   labels      = local.common_labels
-  
+
   service_account_email = module.service_accounts.cloud_run_service_account_email
 
   depends_on = [google_project_service.required_apis]
@@ -175,36 +175,36 @@ module "firestore" {
 module "cloud_run" {
   source = "./modules/cloud-run"
 
-  project_id              = var.project_id
-  region                  = var.region
-  environment             = var.environment
-  app_name                = var.app_name
-  service_name            = local.service_name
-  image_tag               = var.image_tag
-  
-  service_account_email   = module.service_accounts.cloud_run_service_account_email
-  
-  memory                  = var.cloud_run_memory
-  cpu                     = var.cloud_run_cpu
-  timeout                 = var.cloud_run_timeout
-  max_instances           = var.cloud_run_max_instances
-  min_instances           = var.cloud_run_min_instances
-  
+  project_id   = var.project_id
+  region       = var.region
+  environment  = var.environment
+  app_name     = var.app_name
+  service_name = local.service_name
+  image_tag    = var.image_tag
+
+  service_account_email = module.service_accounts.cloud_run_service_account_email
+
+  memory        = var.cloud_run_memory
+  cpu           = var.cloud_run_cpu
+  timeout       = var.cloud_run_timeout
+  max_instances = var.cloud_run_max_instances
+  min_instances = var.cloud_run_min_instances
+
   env_vars = {
-    SOLANA_RPC_URL       = var.solana_rpc_url
-    JUPITER_API_URL      = var.jupiter_api_url
-    SLIPPAGE_BPS         = tostring(var.slippage_bps)
-    GCP_PROJECT_ID       = var.project_id
-    DATA_RETENTION_DAYS  = tostring(var.data_retention_days)
-    CLOUD_RUN_SA_EMAIL   = module.service_accounts.cloud_run_service_account_email
+    SOLANA_RPC_URL      = var.solana_rpc_url
+    JUPITER_API_URL     = var.jupiter_api_url
+    SLIPPAGE_BPS        = tostring(var.slippage_bps)
+    GCP_PROJECT_ID      = var.project_id
+    DATA_RETENTION_DAYS = tostring(var.data_retention_days)
+    CLOUD_RUN_SA_EMAIL  = module.service_accounts.cloud_run_service_account_email
   }
-  
+
   secret_env_vars = {
-    WALLET_PRIVATE_KEY   = module.secret_manager.wallet_private_key_secret_name
-    LINE_CHANNEL_TOKEN   = module.secret_manager.line_channel_token_secret_name
-    LINE_USER_ID         = module.secret_manager.line_user_id_secret_name
+    WALLET_PRIVATE_KEY = module.secret_manager.wallet_private_key_secret_name
+    LINE_CHANNEL_TOKEN = module.secret_manager.line_channel_token_secret_name
+    LINE_USER_ID       = module.secret_manager.line_user_id_secret_name
   }
-  
+
   labels = local.common_labels
 
   depends_on = [
@@ -217,16 +217,16 @@ module "cloud_run" {
 module "scheduler" {
   source = "./modules/scheduler"
 
-  project_id             = var.project_id
-  region                 = var.region
-  environment            = var.environment
-  app_name               = var.app_name
-  job_name               = local.scheduler_job_name
-  schedule               = var.scheduler_cron
-  
-  cloud_run_service_url  = module.cloud_run.service_url
-  service_account_email  = module.service_accounts.scheduler_service_account_email
-  
+  project_id  = var.project_id
+  region      = var.region
+  environment = var.environment
+  app_name    = var.app_name
+  job_name    = local.scheduler_job_name
+  schedule    = var.scheduler_cron
+
+  cloud_run_service_url = module.cloud_run.service_url
+  service_account_email = module.service_accounts.scheduler_service_account_email
+
   labels = local.common_labels
 
   depends_on = [
@@ -278,7 +278,7 @@ resource "google_monitoring_alert_policy" "cloud_run_errors" {
   }
 
   notification_channels = var.enable_monitoring && var.alert_email != "" ? [google_monitoring_notification_channel.email[0].id] : []
-  
+
   user_labels = local.common_labels
 
   alert_strategy {
@@ -291,7 +291,7 @@ resource "google_logging_metric" "trading_errors" {
 
   name        = "${var.app_name}_trading_errors"
   description = "Count of trading errors"
-  
+
   filter = <<-EOT
     resource.type="cloud_run_revision"
     resource.labels.service_name="${local.service_name}"
@@ -303,7 +303,7 @@ resource "google_logging_metric" "trading_errors" {
     metric_kind = "DELTA"
     value_type  = "INT64"
     unit        = "1"
-    
+
     labels {
       key         = "error_type"
       value_type  = "STRING"

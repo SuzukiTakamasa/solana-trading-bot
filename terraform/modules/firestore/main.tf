@@ -7,7 +7,7 @@ resource "google_firestore_database" "database" {
   name                        = local.database_id
   location_id                 = "nam5"
   type                        = "FIRESTORE_NATIVE"
-  concurrency_mode           = "OPTIMISTIC"
+  concurrency_mode            = "OPTIMISTIC"
   app_engine_integration_mode = "DISABLED"
 
   lifecycle {
