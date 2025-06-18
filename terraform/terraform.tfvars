@@ -1,4 +1,4 @@
-project_id       = "your-gcp-project-id"
+project_id       = "solana-trading-bot-462914"
 region           = "us-central1"
 environment      = "production"
 github_repository = "owner/solana-trading-bot"
@@ -18,7 +18,7 @@ cloud_run_min_instances = 0
 scheduler_cron = "0 * * * *"
 
 enable_monitoring = true
-alert_email      = "your-email@example.com"
+alert_email      = "incubus.appalachia@gmail.com"
 
 labels = {
   team        = "trading"

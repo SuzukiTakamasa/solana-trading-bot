@@ -61,15 +61,15 @@ echo "Enabling uniform bucket-level access..."
 gsutil uniformbucketlevelaccess set on "gs://${BUCKET_NAME}"
 
 # Create backend configuration file
-echo "Creating backend configuration file..."
-cat > ../terraform/backend.tf <<EOF
-terraform {
-  backend "gcs" {
-    bucket = "${BUCKET_NAME}"
-    prefix = "terraform/state/solana-trading-bot"
-  }
-}
-EOF
+# echo "Creating backend configuration file..."
+# cat > ../terraform/backend.tf <<EOF
+# terraform {
+#   backend "gcs" {
+#     bucket = "${BUCKET_NAME}"
+#     prefix = "terraform/state/solana-trading-bot"
+#   }
+# }
+# EOF
 
 echo "Terraform backend setup complete!"
 echo ""
