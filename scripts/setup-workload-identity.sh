@@ -1,4 +1,11 @@
 #!/bin/bash
+
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
+
 set -euo pipefail
 
 # Script to set up Workload Identity Federation for GitHub Actions

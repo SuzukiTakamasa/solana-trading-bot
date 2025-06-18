@@ -17,7 +17,8 @@ terraform {
   }
 
   backend "gcs" {
-    prefix = "terraform/state"
+    bucket = "solana-trading-bot-462914-terraform-state"
+    prefix = "terraform/state/solana-trading-bot"
   }
 }
 

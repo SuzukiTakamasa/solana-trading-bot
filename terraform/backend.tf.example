@@ -1,9 +1,0 @@
-# Backend configuration for Terraform state
-# Copy this file to backend.tf and update with your values
-
-terraform {
-  backend "gcs" {
-    bucket = "YOUR_PROJECT_ID-terraform-state"
-    prefix = "terraform/state/solana-trading-bot"
-  }
-}

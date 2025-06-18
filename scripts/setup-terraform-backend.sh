@@ -1,4 +1,11 @@
 #!/bin/bash
+
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
+
 set -euo pipefail
 
 # Script to set up GCS backend for Terraform state management
@@ -55,7 +62,7 @@ gsutil uniformbucketlevelaccess set on "gs://${BUCKET_NAME}"
 
 # Create backend configuration file
 echo "Creating backend configuration file..."
-cat > terraform/backend.tf <<EOF
+cat > ../terraform/backend.tf <<EOF
 terraform {
   backend "gcs" {
     bucket = "${BUCKET_NAME}"
