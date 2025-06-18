@@ -97,12 +97,6 @@ pub struct SwapRequest {
 pub struct SwapResponse {
     #[serde(rename = "swapTransaction")]
     pub swap_transaction: String,
-    #[allow(dead_code)]
-    #[serde(rename = "lastValidBlockHeight")]
-    pub last_valid_block_height: u64,
-    #[allow(dead_code)]
-    #[serde(rename = "prioritizationFeeLamports")]
-    pub prioritization_fee_lamports: Option<u64>,
 }
 
 pub struct JupiterClient {

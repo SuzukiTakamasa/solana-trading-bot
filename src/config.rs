@@ -25,8 +25,6 @@ pub struct Config {
     
     // Firestore configuration
     pub gcp_project_id: String,
-    #[allow(dead_code)]
-    pub firestore_database_id: Option<String>,
     pub data_retention_days: u32,
 }
 
@@ -73,8 +71,6 @@ impl Config {
             
             gcp_project_id: env::var("GCP_PROJECT_ID")
                 .context("GCP_PROJECT_ID must be set")?,
-            
-            firestore_database_id: env::var("FIRESTORE_DATABASE_ID").ok(),
             
             data_retention_days: env::var("DATA_RETENTION_DAYS")
                 .unwrap_or_else(|_| "365".to_string())

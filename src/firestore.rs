@@ -74,8 +74,6 @@ pub struct TradingPerformance {
 
 pub struct FirestoreDb {
     pub session: ServiceSession,
-    #[allow(dead_code)]
-    pub project_id: String,
     retry_count: u32,
 }
 
@@ -93,7 +91,6 @@ impl FirestoreDb {
         
         Ok(Self {
             session,
-            project_id,
             retry_count: 3,
         })
     }
