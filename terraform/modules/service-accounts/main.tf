@@ -84,3 +84,9 @@ resource "google_project_iam_member" "github_secret_manager_admin" {
   role    = "roles/secretmanager.admin"
   member  = "serviceAccount:${google_service_account.github_actions.email}"
 }
+
+resource "google_project_iam_member" "github_actions_token_creator" {
+  project = var.project_id
+  role    = "roles/iam.serviceAccountTokenCreator"
+  member  = "serviceAccount:${google_service_account.github_actions.email}"
+}
