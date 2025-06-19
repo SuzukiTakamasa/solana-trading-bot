@@ -28,27 +28,27 @@ PROJECT_NUMBER=$(gcloud projects describe "${GCP_PROJECT_ID}" --format="value(pr
 echo "Project Number: ${PROJECT_NUMBER}"
 
 # Create workload identity pool
-echo "Creating workload identity pool..."
-gcloud iam workload-identity-pools create github-pool \
-    --project="${GCP_PROJECT_ID}" \
-    --location="global" \
-    --display-name="GitHub Actions Pool" \
-    --description="Pool for GitHub Actions authentication" \
-    || echo "Pool already exists"
+# echo "Creating workload identity pool..."
+# gcloud iam workload-identity-pools create github-pool \
+#     --project="${GCP_PROJECT_ID}" \
+#     --location="global" \
+#     --display-name="GitHub Actions Pool" \
+#     --description="Pool for GitHub Actions authentication" \
+#     || echo "Pool already exists"
 
 # Create OIDC provider
-echo "Creating OIDC provider..."
-gcloud iam workload-identity-pools providers create-oidc github-provider \
-    --project="${GCP_PROJECT_ID}" \
-    --location="global" \
-    --workload-identity-pool="github-pool" \
-    --display-name="GitHub Provider" \
-    --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner" \
-    --issuer-uri="https://token.actions.githubusercontent.com" \
-    || echo "Provider already exists"
+# echo "Creating OIDC provider..."
+# gcloud iam workload-identity-pools providers create-oidc github-provider \
+#     --project="${GCP_PROJECT_ID}" \
+#     --location="global" \
+#     --workload-identity-pool="github-pool" \
+#     --display-name="GitHub Provider" \
+#    --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner" \
+#    --issuer-uri="https://token.actions.githubusercontent.com" \
+#     || echo "Provider already exists"
 
 # Get the service account email
-SERVICE_ACCOUNT_EMAIL="solana-trading-bot-sa-github@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
+SERVICE_ACCOUNT_EMAIL="stb-production-gh@${GCP_PROJECT_ID}.iam.gserviceaccount.com"
 
 # Check if service account exists
 if ! gcloud iam service-accounts describe "${SERVICE_ACCOUNT_EMAIL}" --project="${GCP_PROJECT_ID}" &>/dev/null; then
@@ -61,7 +61,7 @@ echo "Granting workload identity user role..."
 gcloud iam service-accounts add-iam-policy-binding "${SERVICE_ACCOUNT_EMAIL}" \
     --project="${GCP_PROJECT_ID}" \
     --role="roles/iam.workloadIdentityUser" \
-    --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-pool/attribute.repository/${GITHUB_REPOSITORY}"
+    --member="principal://iam.googleapis.com/projects/253621188216/locations/global/workloadIdentityPools/github-actions-pool/subject/SUBJECT_ATTRIBUTE_VALUE"
 
 # Generate the required values for GitHub Secrets
 WIF_PROVIDER="projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-pool/providers/github-provider"

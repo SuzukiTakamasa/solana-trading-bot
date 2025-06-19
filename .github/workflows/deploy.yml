@@ -27,8 +27,8 @@ on:
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: us-central1
-  REPOSITORY: docker
-  IMAGE: ${{ secrets.GCP_PROJECT_ID }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/docker/solana-trading-bot
+  REPOSITORY: solana-trading-bot
+  IMAGE: us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/solana-trading-bot/solana-trading-bot
 
 jobs:
   build:
