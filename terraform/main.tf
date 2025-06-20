@@ -87,39 +87,6 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   project = var.project_id
 }
 
-# Service account for GitHub Actions
-resource "google_service_account" "github_actions" {
-  account_id   = "${var.app_name}-gh-actions"
-  display_name = "GitHub Actions Service Account"
-  description  = "Service account for GitHub Actions CI/CD"
-  project      = var.project_id
-}
-
-# Allow GitHub Actions to impersonate the service account
-resource "google_service_account_iam_member" "github_actions_impersonation" {
-  service_account_id = google_service_account.github_actions.id
-  role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.repository/${var.github_repository}"
-}
-
-# Grant necessary permissions to GitHub Actions service account
-resource "google_project_iam_member" "github_actions_permissions" {
-  for_each = toset([
-    "roles/run.admin",
-    "roles/iam.serviceAccountUser",
-    "roles/storage.admin",
-    "roles/artifactregistry.admin",
-    "roles/secretmanager.admin",
-    "roles/cloudscheduler.admin",
-    "roles/logging.viewer",
-    "roles/monitoring.viewer"
-  ])
-
-  project = var.project_id
-  role    = each.value
-  member  = "serviceAccount:${google_service_account.github_actions.email}"
-}
-
 module "secret_manager" {
   source = "./modules/secret-manager"
 
