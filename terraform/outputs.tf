@@ -51,7 +51,7 @@ output "workload_identity_provider" {
 
 output "github_actions_service_account" {
   description = "Service account email for GitHub Actions"
-  value       = google_service_account.github_actions.email
+  value       = module.service_account.github_actions_service_account_email
 }
 
 output "artifact_registry_repository" {

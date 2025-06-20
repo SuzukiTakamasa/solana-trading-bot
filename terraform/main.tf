@@ -113,7 +113,7 @@ module "docker_build" {
   image_name            = var.app_name
   image_tag             = var.image_tag
   docker_build_context  = var.docker_build_context
-  service_account_email = google_service_account.github_actions.email
+  service_account_email = module.service_accounts.github_actions_service_account_email
   enable_cloud_build    = var.enable_cloud_build
   github_owner          = split("/", var.github_repository)[0]
   github_repo           = split("/", var.github_repository)[1]
