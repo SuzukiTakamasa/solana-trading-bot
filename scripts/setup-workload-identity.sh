@@ -61,7 +61,7 @@ echo "Granting workload identity user role..."
 gcloud iam service-accounts add-iam-policy-binding "${SERVICE_ACCOUNT_EMAIL}" \
     --project="${GCP_PROJECT_ID}" \
     --role="roles/iam.workloadIdentityUser" \
-    --member="principal://iam.googleapis.com/projects/253621188216/locations/global/workloadIdentityPools/github-actions-pool/subject/SUBJECT_ATTRIBUTE_VALUE"
+    --member="principalSet://iam.googleapis.com/projects/253621188216/locations/global/workloadIdentityPools/github-actions-pool/subjects/${GITHUB_REPOSITORY}"
 
 # Generate the required values for GitHub Secrets
 WIF_PROVIDER="projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
