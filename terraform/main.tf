@@ -122,7 +122,7 @@ module "docker_build" {
 
   depends_on = [
     google_project_service.required_apis,
-    google_service_account.github_actions
+    module.service_accounts
   ]
 }
 
