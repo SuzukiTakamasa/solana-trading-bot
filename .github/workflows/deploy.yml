@@ -110,7 +110,7 @@ jobs:
       id: terraform
       run: |
         # Get the Cloud Run service name from Terraform
-        SERVICE_NAME=$(gcloud run services list --region=$REGION --format="value(name)" --filter="labels.app=solana-trading-bot AND labels.environment=production" | head -n1)
+        SERVICE_NAME=$(gcloud run services list --region=$REGION --format="value(name)" --filter="labels.app=stb AND labels.environment=prod" | head -n1)
         
         if [ -z "$SERVICE_NAME" ]; then
           echo "Error: Could not find Cloud Run service. Ensure Terraform has been applied."
@@ -163,7 +163,7 @@ jobs:
     - name: Update Cloud Scheduler
       if: success()
       run: |
-        SCHEDULER_JOB=$(gcloud scheduler jobs list --location=$REGION --format="value(name)" --filter="labels.app=solana-trading-bot AND labels.environment=production" | head -n1)
+        SCHEDULER_JOB=$(gcloud scheduler jobs list --location=$REGION --format="value(name)" --filter="labels.app=stb AND labels.environment=prod" | head -n1)
         
         if [ -n "$SCHEDULER_JOB" ]; then
           # Update the scheduler job with the new service URL
