@@ -85,6 +85,11 @@ resource "google_iam_workload_identity_pool_provider" "github" {
   }
 
   project = var.project_id
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes        = []
+  }
 }
 
 module "secret_manager" {
@@ -280,5 +285,10 @@ resource "google_logging_metric" "trading_errors" {
 
   label_extractors = {
     "error_type" = "EXTRACT(jsonPayload.error_type)"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes        = []
   }
 }

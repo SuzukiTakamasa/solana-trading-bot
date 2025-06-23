@@ -7,6 +7,11 @@ resource "google_secret_manager_secret" "wallet_private_key" {
   }
 
   labels = var.labels
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes        = []
+  }
 }
 
 resource "google_secret_manager_secret" "line_channel_token" {
@@ -18,6 +23,11 @@ resource "google_secret_manager_secret" "line_channel_token" {
   }
 
   labels = var.labels
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes        = []
+  }
 }
 
 resource "google_secret_manager_secret" "line_user_id" {
@@ -29,6 +39,11 @@ resource "google_secret_manager_secret" "line_user_id" {
   }
 
   labels = var.labels
+
+  lifecycle {
+    create_before_destroy = true
+    ignore_changes        = []
+  }
 }
 
 resource "google_secret_manager_secret_iam_member" "wallet_key_accessor" {
