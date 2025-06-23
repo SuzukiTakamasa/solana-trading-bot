@@ -124,6 +124,7 @@ echo -n "your-line-user-id" | gcloud secrets versions add \
 terraform/
 ├── modules/
 │   ├── cloud-run/          # Cloud Run service configuration
+│   ├── docker-build/       # Docker image build automation
 │   ├── firestore/          # Firestore database and indexes
 │   ├── scheduler/          # Cloud Scheduler jobs
 │   ├── secret-manager/     # Secret Manager resources
