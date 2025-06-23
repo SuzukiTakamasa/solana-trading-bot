@@ -13,7 +13,7 @@ variable "region" {
 variable "environment" {
   description = "Environment name (e.g., production, staging)"
   type        = string
-  default     = "prod"
+  default     = "production"
 }
 
 variable "app_name" {
