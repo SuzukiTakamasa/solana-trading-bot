@@ -268,10 +268,11 @@ pub async fn check_and_trade(
                     let total_profit = profit_per_sol * Decimal::from_f64_retain(sol_spent).unwrap_or(dec!(0));
                     state.total_profit_usdc += total_profit;
                     
-                    if total_profit > dec!(0) {
-                        state.winning_trades += 1;
-                    } else if total_profit < dec!(0) {
-                        state.losing_trades += 1;
+
+                    match total_profit.cmp(&dec!(0)) {
+                        std::cmp::Ordering::Greater => state.winning_trades += 1,
+                        std::cmp::Ordering::Less => state.losing_trades += 1,
+                        std::cmp::Ordering::Equal => {}
                     }
                     
                     Some(total_profit)

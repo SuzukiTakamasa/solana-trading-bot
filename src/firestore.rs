@@ -210,21 +210,27 @@ impl FirestoreDb {
         let price_7d = self.get_price_at_time(now - chrono::Duration::days(7)).await?;
         
         let trend_1h = price_1h.map(|p| {
-            if current_price > p { "up".to_string() }
-            else if current_price < p { "down".to_string() }
-            else { "stable".to_string() }
+            match current_price.cmp(&p) {
+                std::cmp::Ordering::Greater => "up".to_string(),
+                std::cmp::Ordering::Less => "down".to_string(),
+                std::cmp::Ordering::Equal => "stable".to_string(),
+            }
         });
         
         let trend_24h = price_24h.map(|p| {
-            if current_price > p { "up".to_string() }
-            else if current_price < p { "down".to_string() }
-            else { "stable".to_string() }
+            match current_price.cmp(&p) {
+                std::cmp::Ordering::Greater => "up".to_string(),
+                std::cmp::Ordering::Less => "down".to_string(),
+                std::cmp::Ordering::Equal => "stable".to_string(),
+            }
         });
         
         let trend_7d = price_7d.map(|p| {
-            if current_price > p { "up".to_string() }
-            else if current_price < p { "down".to_string() }
-            else { "stable".to_string() }
+            match current_price.cmp(&p) {
+                std::cmp::Ordering::Greater => "up".to_string(),
+                std::cmp::Ordering::Less => "down".to_string(),
+                std::cmp::Ordering::Equal => "stable".to_string(),
+            }
         });
         
         let volatility_1h = self.calculate_volatility(1).await.ok();
@@ -303,10 +309,10 @@ impl FirestoreDb {
                         
                         if let Some(profit_loss) = session.profit_loss {
                             total_profit_loss += profit_loss;
-                            if profit_loss > Decimal::ZERO {
-                                winning_trades += 1;
-                            } else if profit_loss < Decimal::ZERO {
-                                losing_trades += 1;
+                            match profit_loss.cmp(&Decimal::ZERO) {
+                                std::cmp::Ordering::Greater => winning_trades += 1,
+                                std::cmp::Ordering::Less => losing_trades += 1,
+                                std::cmp::Ordering::Equal => {},
                             }
                         }
                         
