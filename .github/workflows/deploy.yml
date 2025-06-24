@@ -134,7 +134,16 @@ jobs:
         gcloud run deploy ${{ steps.terraform.outputs.service_name }} \
           --image $IMAGE:$IMAGE_TAG \
           --region $REGION \
-          --platform managed
+          --platform managed \
+          --port 8080 \
+          --timeout 300 \
+          --memory 1Gi \
+          --cpu 1 \
+          --max-instances 10 \
+          --concurrency 80 \
+          --cpu-boost \
+          --set-env-vars "PORT=8080,RUST_LOG=solana_trading_bot=info,GCP_PROJECT_ID=$PROJECT_ID,SOLANA_RPC_URL=https://api.mainnet-beta.solana.com,JUPITER_API_URL=https://quote-api.jup.ag/v6,SLIPPAGE_BPS=50,SOL_MINT=So11111111111111111111111111111111111111112,USDC_MINT=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v,DATA_RETENTION_DAYS=365,WALLET_PRIVATE_KEY=${{ secrets.WALLET_PRIVATE_KEY }},LINE_CHANNEL_TOKEN=${{ secrets.LINE_CHANNEL_TOKEN }},LINE_USER_ID=${{ secrets.LINE_USER_ID }}" \
+          --allow-unauthenticated
 
         # Get the service URL
         URL=$(gcloud run services describe ${{ steps.terraform.outputs.service_name }} \
