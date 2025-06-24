@@ -161,9 +161,63 @@ jobs:
         cd terraform
         terraform init
 
-    - name: Terraform Apply
+    - name: Handle Existing Resources
       run: |
         cd terraform
+        # Set required environment variables
+        export TF_VAR_project_id="${{ secrets.GCP_PROJECT_ID }}"
+        export TF_VAR_app_name="stb"
+        
+        # Run the import script
+        ./handle_existing_resources.sh || echo "Import completed or skipped"
+
+    - name: Terraform Apply with Target
+      run: |
+        cd terraform
+        # First apply everything except Cloud Run to create secrets
+        terraform apply -auto-approve -target=module.secret_manager -target=module.service_accounts -target=module.firestore -target=module.docker_build
+
+    - name: Create Secret Versions
+      run: |
+        cd terraform
+        
+        # Get secret names from Terraform outputs
+        WALLET_SECRET=$(terraform output -raw wallet_private_key_secret_name 2>/dev/null || echo "")
+        LINE_TOKEN_SECRET=$(terraform output -raw line_channel_token_secret_name 2>/dev/null || echo "")
+        LINE_USER_SECRET=$(terraform output -raw line_user_id_secret_name 2>/dev/null || echo "")
+        
+        # Create secret versions if they don't exist
+        if [ -n "${WALLET_SECRET}" ]; then
+          if [ -n "${{ secrets.WALLET_PRIVATE_KEY }}" ]; then
+            echo "${{ secrets.WALLET_PRIVATE_KEY }}" | gcloud secrets versions add "${WALLET_SECRET}" --data-file=- || echo "Secret version already exists or creation failed"
+          else
+            echo "Creating placeholder for wallet private key secret"
+            echo "PLACEHOLDER_WALLET_KEY" | gcloud secrets versions add "${WALLET_SECRET}" --data-file=- || echo "Secret version already exists or creation failed"
+          fi
+        fi
+        
+        if [ -n "${LINE_TOKEN_SECRET}" ]; then
+          if [ -n "${{ secrets.LINE_CHANNEL_TOKEN }}" ]; then
+            echo "${{ secrets.LINE_CHANNEL_TOKEN }}" | gcloud secrets versions add "${LINE_TOKEN_SECRET}" --data-file=- || echo "Secret version already exists or creation failed"
+          else
+            echo "Creating placeholder for LINE channel token secret"
+            echo "PLACEHOLDER_LINE_TOKEN" | gcloud secrets versions add "${LINE_TOKEN_SECRET}" --data-file=- || echo "Secret version already exists or creation failed"
+          fi
+        fi
+        
+        if [ -n "${LINE_USER_SECRET}" ]; then
+          if [ -n "${{ secrets.LINE_USER_ID }}" ]; then
+            echo "${{ secrets.LINE_USER_ID }}" | gcloud secrets versions add "${LINE_USER_SECRET}" --data-file=- || echo "Secret version already exists or creation failed"
+          else
+            echo "Creating placeholder for LINE user ID secret"
+            echo "PLACEHOLDER_LINE_USER" | gcloud secrets versions add "${LINE_USER_SECRET}" --data-file=- || echo "Secret version already exists or creation failed"
+          fi
+        fi
+
+    - name: Terraform Apply Full
+      run: |
+        cd terraform
+        # Now apply everything including Cloud Run
         terraform apply -auto-approve
 
     - name: Get Terraform Outputs
@@ -172,24 +226,6 @@ jobs:
         cd terraform
         echo "cloud_run_url=$(terraform output -raw cloud_run_service_url)" >> $GITHUB_OUTPUT
         echo "scheduler_job=$(terraform output -raw scheduler_job_name)" >> $GITHUB_OUTPUT
-
-    - name: Update Secret Manager
-      run: |
-        # Update secrets in Secret Manager if they exist in GitHub Secrets
-        if [ -n "${{ secrets.WALLET_PRIVATE_KEY }}" ]; then
-          gcloud secrets versions add "${{ secrets.WALLET_PRIVATE_KEY }}" \
-            "$(cd terraform && terraform output -json secret_names | jq -r '.wallet_private_key')"
-        fi
-        
-        if [ -n "${{ secrets.LINE_CHANNEL_TOKEN }}" ]; then
-          gcloud secrets versions add "${{ secrets.LINE_CHANNEL_TOKEN }}" \
-            "$(cd terraform && terraform output -json secret_names | jq -r '.line_channel_token')"
-        fi
-        
-        if [ -n "${{ secrets.LINE_USER_ID }}" ]; then
-          gcloud secrets versions add "${{ secrets.LINE_USER_ID }}" \
-            "$(cd terraform && terraform output -json secret_names | jq -r '.line_user_id')"
-        fi
 
     - name: Trigger Application Deployment
       if: success()

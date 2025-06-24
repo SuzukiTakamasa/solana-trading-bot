@@ -122,7 +122,7 @@ jobs:
     - name: Deploy Firestore rules
       run: |
         if [ -f "firestore.rules" ]; then
-          gcloud firestore databases update (default) --type=firestore-native || echo "Firestore already configured"
+          gcloud firestore databases update "(default)" --type=firestore-native || echo "Firestore already configured"
           gsutil cp firestore.rules gs://$PROJECT_ID.appspot.com/firestore.rules || echo "Failed to upload rules"
         fi
 

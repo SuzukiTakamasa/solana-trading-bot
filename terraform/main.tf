@@ -61,6 +61,10 @@ resource "google_iam_workload_identity_pool" "github" {
   disabled                  = false
 
   project = var.project_id
+  
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "google_iam_workload_identity_pool_provider" "github" {
