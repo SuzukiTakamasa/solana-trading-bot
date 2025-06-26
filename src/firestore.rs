@@ -81,9 +81,15 @@ impl FirestoreDb {
     pub async fn new(project_id: String) -> Result<Self> {
         info!("Initializing Firestore client for project: {}", project_id);
         
-        let cred = Credentials::from_file("service-account.json")
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to load credentials: {}", e))?;
+        let cred = if let Ok(json_path) = std::env::var("CLOUD_RUN_CREDENTIALS") {
+            info!("Using credentials files: {}", json_path);
+            Credentials::from_file(&json_path)
+                .await
+                .map_err(|e| anyhow::anyhow!("Failed to load credentials: {}", e))?
+        } else {
+            info!("Using default credentials (Cloud Run service account)");
+            Credentials::default()
+        };
         
         let session = ServiceSession::new(cred)
             .await

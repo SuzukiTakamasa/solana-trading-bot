@@ -31,3 +31,6 @@ dist/
 build/
 
 terraform/.terraform/
+
+# Service account keys for local development
+solana-trading-bot-462914-413037d36363.json
