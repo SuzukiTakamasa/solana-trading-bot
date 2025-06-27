@@ -19,6 +19,12 @@ resource "google_service_account" "github_actions" {
   project      = var.project_id
 }
 
+resource "google_project_iam_member" "cloud_run_firestore_user" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.cloud_run.email}"
+}
+
 resource "google_project_iam_member" "cloud_run_logging" {
   project = var.project_id
   role    = "roles/logging.logWriter"
