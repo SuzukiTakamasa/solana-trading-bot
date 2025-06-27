@@ -7,7 +7,6 @@ mod wallet;
 
 use anyhow::Result;
 use axum::{extract::Query, response::IntoResponse, routing::get, Json, Router};
-use futures::stream::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -298,25 +297,44 @@ async fn get_trading_sessions_internal(limit: u32) -> Result<Vec<firestore::Trad
     let config = config::Config::from_env()?;
     let db = firestore::FirestoreDb::new(config.gcp_project_id).await?;
     
-    // Get all trading sessions from Firestore and sort them manually
-    let mut sessions = Vec::new();
-    let mut stream = firestore_db_and_auth::documents::list::<firestore::TradingSession, _>(&db.session, "trading_sessions");
+    // Get all trading sessions from the database
+    let _all_sessions = db.get_trading_performance(3650).await?; // Get up to 10 years of data
     
-    while let Some(doc_result) = stream.next().await {
-        match doc_result {
-            Ok((session, _)) => {
-                sessions.push(session);
-            },
-            Err(e) => {
-                error!("Error reading trading session document: {}", e);
-                continue;
+    // Get the actual sessions data by making another call
+    // For now, we'll use the price history method as a template
+    let url = format!(
+        "https://firestore.googleapis.com/v1/projects/{}/databases/{}/documents/trading_sessions?orderBy=timestamp%20desc",
+        db.project_id, db.database_id
+    );
+    
+    let auth_token = db.get_auth_token().await?;
+    
+    let response = reqwest::Client::new()
+        .get(&url)
+        .header("Authorization", auth_token)
+        .send()
+        .await?
+        .error_for_status()?;
+    
+    #[derive(serde::Deserialize)]
+    struct ListResponse {
+        documents: Option<Vec<firestore::FirestoreDocument>>,
+    }
+    
+    let result: ListResponse = response.json().await?;
+    let mut sessions = Vec::new();
+    
+    if let Some(documents) = result.documents {
+        for doc in documents.into_iter().take(limit as usize) {
+            match db.firestore_document_to_json(doc) {
+                Ok(session) => sessions.push(session),
+                Err(e) => {
+                    error!("Error reading trading session document: {}", e);
+                    continue;
+                }
             }
         }
     }
-    
-    // Sort by timestamp descending and limit
-    sessions.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-    sessions.truncate(limit as usize);
     
     Ok(sessions)
 }

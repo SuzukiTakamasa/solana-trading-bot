@@ -1,16 +1,19 @@
 use anyhow::Result;
-use chrono::{DateTime, Utc};
-use firestore_db_and_auth::{documents, Credentials, ServiceSession};
-use futures::stream::StreamExt;
+use chrono::{DateTime, FixedOffset, TimeZone};
+use chrono_tz::Asia::Tokyo;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use uuid::Uuid;
+use gcp_auth::{AuthenticationManager, CustomServiceAccount};
+use reqwest::{Client, header::{AUTHORIZATION, CONTENT_TYPE}};
+use serde_json::Value as JsonValue;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PriceHistory {
     pub id: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: DateTime<FixedOffset>,
     pub sol_price_usdc: Decimal,
     pub usdc_price_sol: Decimal,
     pub data_source: String,
@@ -20,7 +23,7 @@ pub struct PriceHistory {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TradingSession {
     pub id: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: DateTime<FixedOffset>,
     pub position_before: String,
     pub position_after: String,
     pub action: String,
@@ -38,7 +41,7 @@ pub struct TradingSession {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfitTracking {
     pub id: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: DateTime<FixedOffset>,
     pub trading_session_id: String,
     pub profit_loss_usdc: Decimal,
     pub cumulative_profit_usdc: Decimal,
@@ -50,7 +53,7 @@ pub struct ProfitTracking {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PriceTrend {
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: DateTime<FixedOffset>,
     pub price_1h_ago: Option<Decimal>,
     pub price_24h_ago: Option<Decimal>,
     pub price_7d_ago: Option<Decimal>,
@@ -72,8 +75,48 @@ pub struct TradingPerformance {
     pub period_days: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FirestoreDocument {
+    name: Option<String>,
+    fields: HashMap<String, FirestoreValue>,
+    create_time: Option<String>,
+    update_time: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+enum FirestoreValue {
+    StringValue { string_value: String },
+    IntegerValue { integer_value: String },
+    DoubleValue { double_value: f64 },
+    BooleanValue { boolean_value: bool },
+    TimestampValue { timestamp_value: String },
+    NullValue { null_value: String },
+    ArrayValue { array_value: FirestoreArrayValue },
+    MapValue { map_value: FirestoreMapValue },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FirestoreArrayValue {
+    values: Vec<FirestoreValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FirestoreMapValue {
+    fields: HashMap<String, FirestoreValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ListDocumentsResponse {
+    documents: Option<Vec<FirestoreDocument>>,
+    next_page_token: Option<String>,
+}
+
 pub struct FirestoreDb {
-    pub session: ServiceSession,
+    client: Client,
+    auth_manager: AuthenticationManager,
+    pub project_id: String,
+    pub database_id: String,
     retry_count: u32,
 }
 
@@ -81,23 +124,143 @@ impl FirestoreDb {
     pub async fn new(project_id: String) -> Result<Self> {
         info!("Initializing Firestore client for project: {}", project_id);
         
-        let cred = if let Ok(json_path) = std::env::var("CLOUD_RUN_CREDENTIALS") {
+        let client = Client::new();
+        
+        // Setup authentication
+        let auth_manager = if let Ok(json_path) = std::env::var("CLOUD_RUN_CREDENTIALS") {
             info!("Using credentials files: {}", json_path);
-            Credentials::from_file(&json_path)
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to load credentials: {}", e))?
+            let service_account = CustomServiceAccount::from_file(&json_path)?;
+            AuthenticationManager::from(service_account)
         } else {
             info!("Using default credentials (Cloud Run service account)");
-            Credentials::default()
+            AuthenticationManager::new().await?
         };
         
-        let session = ServiceSession::new(cred)
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to create session: {}", e))?;
-        
         Ok(Self {
-            session,
+            client,
+            auth_manager,
+            project_id,
+            database_id: "(default)".to_string(),
             retry_count: 3,
+        })
+    }
+    
+    fn get_document_url(&self, collection: &str, document_id: &str) -> String {
+        format!(
+            "https://firestore.googleapis.com/v1/projects/{}/databases/{}/documents/{}/{}",
+            self.project_id, self.database_id, collection, document_id
+        )
+    }
+    
+    fn get_collection_url(&self, collection: &str) -> String {
+        format!(
+            "https://firestore.googleapis.com/v1/projects/{}/databases/{}/documents/{}",
+            self.project_id, self.database_id, collection
+        )
+    }
+    
+    pub async fn get_auth_token(&self) -> Result<String> {
+        let token = self.auth_manager
+            .get_token(&["https://www.googleapis.com/auth/datastore"])
+            .await?;
+        Ok(format!("Bearer {}", token.as_str()))
+    }
+    
+    fn serialize_to_firestore_document<T: Serialize>(&self, data: &T) -> Result<FirestoreDocument> {
+        let json_value = serde_json::to_value(data)?;
+        let fields = self.json_to_firestore_fields(json_value)?;
+        
+        Ok(FirestoreDocument {
+            fields,
+            name: None,
+            create_time: None,
+            update_time: None,
+        })
+    }
+    
+    fn json_to_firestore_fields(&self, value: JsonValue) -> Result<HashMap<String, FirestoreValue>> {
+        match value {
+            JsonValue::Object(map) => {
+                let mut fields = HashMap::new();
+                for (key, val) in map {
+                    fields.insert(key, self.json_to_firestore_value(val)?);
+                }
+                Ok(fields)
+            }
+            _ => Err(anyhow::anyhow!("Expected JSON object")),
+        }
+    }
+    
+    fn json_to_firestore_value(&self, value: JsonValue) -> Result<FirestoreValue> {
+        Ok(match value {
+            JsonValue::Null => FirestoreValue::NullValue { null_value: "NULL_VALUE".to_string() },
+            JsonValue::Bool(b) => FirestoreValue::BooleanValue { boolean_value: b },
+            JsonValue::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    FirestoreValue::IntegerValue { integer_value: i.to_string() }
+                } else if let Some(f) = n.as_f64() {
+                    FirestoreValue::DoubleValue { double_value: f }
+                } else {
+                    // Handle Decimal as string
+                    FirestoreValue::StringValue { string_value: n.to_string() }
+                }
+            },
+            JsonValue::String(s) => {
+                // Check if it's a timestamp
+                if s.ends_with('Z') && s.contains('T') {
+                    FirestoreValue::TimestampValue { timestamp_value: s }
+                } else {
+                    FirestoreValue::StringValue { string_value: s }
+                }
+            },
+            JsonValue::Array(arr) => {
+                let values = arr.into_iter()
+                    .map(|v| self.json_to_firestore_value(v))
+                    .collect::<Result<Vec<_>>>()?;
+                FirestoreValue::ArrayValue { array_value: FirestoreArrayValue { values } }
+            },
+            JsonValue::Object(map) => {
+                let fields = self.json_to_firestore_fields(JsonValue::Object(map))?;
+                FirestoreValue::MapValue { map_value: FirestoreMapValue { fields } }
+            },
+        })
+    }
+    
+    pub fn firestore_document_to_json<T: for<'de> Deserialize<'de>>(&self, doc: FirestoreDocument) -> Result<T> {
+        let json_value = self.firestore_fields_to_json(doc.fields)?;
+        serde_json::from_value(json_value).map_err(|e| anyhow::anyhow!("Failed to deserialize: {}", e))
+    }
+    
+    fn firestore_fields_to_json(&self, fields: HashMap<String, FirestoreValue>) -> Result<JsonValue> {
+        let mut map = serde_json::Map::new();
+        for (key, value) in fields {
+            map.insert(key, self.firestore_value_to_json(value)?);
+        }
+        Ok(JsonValue::Object(map))
+    }
+    
+    fn firestore_value_to_json(&self, value: FirestoreValue) -> Result<JsonValue> {
+        Ok(match value {
+            FirestoreValue::NullValue { .. } => JsonValue::Null,
+            FirestoreValue::BooleanValue { boolean_value } => JsonValue::Bool(boolean_value),
+            FirestoreValue::IntegerValue { integer_value } => {
+                JsonValue::Number(integer_value.parse::<i64>()?.into())
+            },
+            FirestoreValue::DoubleValue { double_value } => {
+                JsonValue::Number(serde_json::Number::from_f64(double_value)
+                    .ok_or_else(|| anyhow::anyhow!("Invalid float value"))?)
+            },
+            FirestoreValue::StringValue { string_value } => JsonValue::String(string_value),
+            FirestoreValue::TimestampValue { timestamp_value } => JsonValue::String(timestamp_value),
+            FirestoreValue::ArrayValue { array_value } => {
+                let values = array_value.values.into_iter()
+                    .map(|v| self.firestore_value_to_json(v))
+                    .collect::<Result<Vec<_>>>()?;
+                JsonValue::Array(values)
+            },
+            FirestoreValue::MapValue { map_value } => {
+                self.firestore_fields_to_json(map_value.fields)?
+            },
         })
     }
     
@@ -125,9 +288,18 @@ impl FirestoreDb {
     }
     
     async fn _store_price_history_internal(&self, price_data: &PriceHistory) -> Result<()> {
-        documents::write(&self.session, "price_history", Some(&price_data.id), price_data, documents::WriteOptions::default())
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to write price history document: {}", e))?;
+        let document = self.serialize_to_firestore_document(price_data)?;
+        let url = self.get_document_url("price_history", &price_data.id);
+        let auth_token = self.get_auth_token().await?;
+        
+        self.client
+            .patch(&url)
+            .header(AUTHORIZATION, auth_token)
+            .header(CONTENT_TYPE, "application/json")
+            .json(&document)
+            .send()
+            .await?
+            .error_for_status()?;
         
         Ok(())
     }
@@ -156,60 +328,90 @@ impl FirestoreDb {
     }
     
     async fn _store_trading_session_internal(&self, session: &TradingSession) -> Result<()> {
-        documents::write(&self.session, "trading_sessions", Some(&session.id), session, documents::WriteOptions::default())
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to write trading session document: {}", e))?;
+        let document = self.serialize_to_firestore_document(session)?;
+        let url = self.get_document_url("trading_sessions", &session.id);
+        let auth_token = self.get_auth_token().await?;
+        
+        self.client
+            .patch(&url)
+            .header(AUTHORIZATION, auth_token)
+            .header(CONTENT_TYPE, "application/json")
+            .json(&document)
+            .send()
+            .await?
+            .error_for_status()?;
         
         Ok(())
     }
     
     pub async fn store_profit_tracking(&self, profit: &ProfitTracking) -> Result<()> {
-        documents::write(&self.session, "profit_tracking", Some(&profit.id), profit, documents::WriteOptions::default())
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to write profit tracking document: {}", e))?;
+        let document = self.serialize_to_firestore_document(profit)?;
+        let url = self.get_document_url("profit_tracking", &profit.id);
+        let auth_token = self.get_auth_token().await?;
+        
+        self.client
+            .patch(&url)
+            .header(AUTHORIZATION, auth_token)
+            .header(CONTENT_TYPE, "application/json")
+            .json(&document)
+            .send()
+            .await?
+            .error_for_status()?;
         
         Ok(())
     }
     
     pub async fn get_latest_price(&self) -> Result<Option<PriceHistory>> {
-        // Use list and manually sort since query API is complex
-        let mut stream = documents::list::<PriceHistory, _>(&self.session, "price_history");
-        match stream.next().await {
-            Some(Ok(doc_result)) => {
-                let (doc, _) = doc_result;
-                Ok(Some(doc))
-            },
-            Some(Err(e)) => Err(anyhow::anyhow!("Failed to query latest price: {}", e)),
-            None => Ok(None)
+        let url = format!("{}{}", self.get_collection_url("price_history"), "?pageSize=1&orderBy=timestamp%20desc");
+        let auth_token = self.get_auth_token().await?;
+        
+        let response = self.client
+            .get(&url)
+            .header(AUTHORIZATION, auth_token)
+            .send()
+            .await?
+            .error_for_status()?;
+        
+        let result: ListDocumentsResponse = response.json().await?;
+        
+        if let Some(documents) = result.documents {
+            if let Some(doc) = documents.into_iter().next() {
+                return Ok(Some(self.firestore_document_to_json(doc)?));
+            }
         }
+        
+        Ok(None)
     }
     
     pub async fn get_price_history(&self, hours: u32) -> Result<Vec<PriceHistory>> {
-        let cutoff_time = Utc::now() - chrono::Duration::hours(hours as i64);
+        let cutoff_time = Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()) - chrono::Duration::hours(hours as i64);
+        let url = format!("{}{}", self.get_collection_url("price_history"), "?orderBy=timestamp%20desc");
+        let auth_token = self.get_auth_token().await?;
         
-        let mut stream = documents::list::<PriceHistory, _>(&self.session, "price_history");
+        let response = self.client
+            .get(&url)
+            .header(AUTHORIZATION, auth_token)
+            .send()
+            .await?
+            .error_for_status()?;
+        
+        let result: ListDocumentsResponse = response.json().await?;
         let mut prices = Vec::new();
         
-        while let Some(doc_result) = stream.next().await {
-            match doc_result {
-                Ok((doc, _)) => {
-                    if doc.timestamp > cutoff_time {
-                        prices.push(doc);
-                    }
-                },
-                Err(e) => {
-                    error!("Error reading price history document: {}", e);
-                    continue;
+        if let Some(documents) = result.documents {
+            for doc in documents {
+                let price: PriceHistory = self.firestore_document_to_json(doc)?;
+                if price.timestamp > cutoff_time {
+                    prices.push(price);
                 }
             }
         }
         
-        prices.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
         Ok(prices)
     }
     
     pub async fn get_price_trend(&self, current_price: Decimal) -> Result<PriceTrend> {
-        let now = Utc::now();
+        let now = Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap());
         
         let price_1h = self.get_price_at_time(now - chrono::Duration::hours(1)).await?;
         let price_24h = self.get_price_at_time(now - chrono::Duration::hours(24)).await?;
@@ -255,26 +457,29 @@ impl FirestoreDb {
         })
     }
     
-    async fn get_price_at_time(&self, time: DateTime<Utc>) -> Result<Option<Decimal>> {
-        let mut stream = documents::list::<PriceHistory, _>(&self.session, "price_history");
-        let mut valid_prices = Vec::new();
+    async fn get_price_at_time(&self, time: DateTime<FixedOffset>) -> Result<Option<Decimal>> {
+        let url = format!("{}{}", self.get_collection_url("price_history"), "?pageSize=1&orderBy=timestamp%20desc");
+        let auth_token = self.get_auth_token().await?;
         
-        while let Some(doc_result) = stream.next().await {
-            match doc_result {
-                Ok((doc, _)) => {
-                    if doc.timestamp <= time {
-                        valid_prices.push(doc);
-                    }
-                },
-                Err(e) => {
-                    error!("Error reading price history document: {}", e);
-                    continue;
+        let response = self.client
+            .get(&url)
+            .header(AUTHORIZATION, auth_token)
+            .send()
+            .await?
+            .error_for_status()?;
+        
+        let result: ListDocumentsResponse = response.json().await?;
+        
+        if let Some(documents) = result.documents {
+            for doc in documents {
+                let price: PriceHistory = self.firestore_document_to_json(doc)?;
+                if price.timestamp <= time {
+                    return Ok(Some(price.sol_price_usdc));
                 }
             }
         }
         
-        valid_prices.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-        Ok(valid_prices.first().map(|p| p.sol_price_usdc))
+        Ok(None)
     }
     
     async fn calculate_volatility(&self, hours: u32) -> Result<Decimal> {
@@ -298,38 +503,42 @@ impl FirestoreDb {
     }
     
     pub async fn get_trading_performance(&self, days: u32) -> Result<TradingPerformance> {
-        let cutoff_time = Utc::now() - chrono::Duration::days(days as i64);
+        let cutoff_time = Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()) - chrono::Duration::days(days as i64);
+        let url = self.get_collection_url("trading_sessions");
+        let auth_token = self.get_auth_token().await?;
         
-        let mut stream = documents::list::<TradingSession, _>(&self.session, "trading_sessions");
+        let response = self.client
+            .get(&url)
+            .header(AUTHORIZATION, auth_token)
+            .send()
+            .await?
+            .error_for_status()?;
+        
+        let result: ListDocumentsResponse = response.json().await?;
         let mut total_trades = 0;
         let mut winning_trades = 0;
         let mut losing_trades = 0;
         let mut total_profit_loss = Decimal::ZERO;
         let mut total_gas_fees = Decimal::ZERO;
         
-        while let Some(doc_result) = stream.next().await {
-            match doc_result {
-                Ok((session, _)) => {
-                    if session.timestamp > cutoff_time {
-                        total_trades += 1;
-                        
-                        if let Some(profit_loss) = session.profit_loss {
-                            total_profit_loss += profit_loss;
-                            match profit_loss.cmp(&Decimal::ZERO) {
-                                std::cmp::Ordering::Greater => winning_trades += 1,
-                                std::cmp::Ordering::Less => losing_trades += 1,
-                                std::cmp::Ordering::Equal => {},
-                            }
-                        }
-                        
-                        if let Some(gas_fee) = session.gas_fee {
-                            total_gas_fees += gas_fee;
+        if let Some(documents) = result.documents {
+            for doc in documents {
+                let session: TradingSession = self.firestore_document_to_json(doc)?;
+                if session.timestamp > cutoff_time {
+                    total_trades += 1;
+                    
+                    if let Some(profit_loss) = session.profit_loss {
+                        total_profit_loss += profit_loss;
+                        match profit_loss.cmp(&Decimal::ZERO) {
+                            std::cmp::Ordering::Greater => winning_trades += 1,
+                            std::cmp::Ordering::Less => losing_trades += 1,
+                            std::cmp::Ordering::Equal => {},
                         }
                     }
-                },
-                Err(e) => {
-                    error!("Error reading trading session document: {}", e);
-                    continue;
+                    
+                    if let Some(gas_fee) = session.gas_fee {
+                        total_gas_fees += gas_fee;
+                    }
                 }
             }
         }
@@ -352,49 +561,60 @@ impl FirestoreDb {
     }
     
     pub async fn get_latest_profit_tracking(&self) -> Result<Option<ProfitTracking>> {
-        let mut stream = documents::list::<ProfitTracking, _>(&self.session, "profit_tracking");
-        let mut profits = Vec::new();
+        let url = format!("{}{}", self.get_collection_url("profit_tracking"), "?pageSize=1&orderBy=timestamp%20desc");
+        let auth_token = self.get_auth_token().await?;
         
-        while let Some(doc_result) = stream.next().await {
-            match doc_result {
-                Ok((profit, _)) => {
-                    profits.push(profit);
-                },
-                Err(e) => {
-                    error!("Error reading profit tracking document: {}", e);
-                    continue;
-                }
+        let response = self.client
+            .get(&url)
+            .header(AUTHORIZATION, auth_token)
+            .send()
+            .await?
+            .error_for_status()?;
+        
+        let result: ListDocumentsResponse = response.json().await?;
+        
+        if let Some(documents) = result.documents {
+            if let Some(doc) = documents.into_iter().next() {
+                return Ok(Some(self.firestore_document_to_json(doc)?));
             }
         }
         
-        profits.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-        Ok(profits.first().cloned())
+        Ok(None)
     }
     
     pub async fn cleanup_old_data(&self, retention_days: u32) -> Result<()> {
-        let cutoff_time = Utc::now() - chrono::Duration::days(retention_days as i64);
+        let cutoff_time = Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()) - chrono::Duration::days(retention_days as i64);
         
         info!("Cleaning up data older than {} days", retention_days);
         
         // Clean up price history
-        let mut stream = documents::list::<PriceHistory, _>(&self.session, "price_history");
+        let url = self.get_collection_url("price_history");
+        let auth_token = self.get_auth_token().await?;
+        
+        let response = self.client
+            .get(&url)
+            .header(AUTHORIZATION, &auth_token)
+            .send()
+            .await?
+            .error_for_status()?;
+        
+        let result: ListDocumentsResponse = response.json().await?;
         let mut deleted_count = 0;
         
-        while let Some(doc_result) = stream.next().await {
-            match doc_result {
-                Ok((doc, doc_metadata)) => {
-                    if doc.timestamp < cutoff_time {
-                        let doc_path = format!("price_history/{}", doc_metadata.name);
-                        if let Err(e) = documents::delete(&self.session, &doc_path, true).await {
-                            warn!("Failed to delete document {}: {}", doc_path, e);
-                        } else {
-                            deleted_count += 1;
-                        }
+        if let Some(documents) = result.documents {
+            for doc in documents {
+                let price: PriceHistory = self.firestore_document_to_json(doc.clone())?;
+                if price.timestamp < cutoff_time {
+                    if let Some(name) = doc.name {
+                        let delete_url = format!("https://firestore.googleapis.com/v1/{}", name);
+                        self.client
+                            .delete(&delete_url)
+                            .header(AUTHORIZATION, &auth_token)
+                            .send()
+                            .await?
+                            .error_for_status()?;
+                        deleted_count += 1;
                     }
-                },
-                Err(e) => {
-                    warn!("Error reading price history document: {}", e);
-                    continue;
                 }
             }
         }
@@ -402,24 +622,31 @@ impl FirestoreDb {
         info!("Deleted {} old documents from price_history", deleted_count);
         
         // Clean up trading sessions
-        let mut stream = documents::list::<TradingSession, _>(&self.session, "trading_sessions");
+        let url = self.get_collection_url("trading_sessions");
+        let response = self.client
+            .get(&url)
+            .header(AUTHORIZATION, &auth_token)
+            .send()
+            .await?
+            .error_for_status()?;
+        
+        let result: ListDocumentsResponse = response.json().await?;
         let mut deleted_count = 0;
         
-        while let Some(doc_result) = stream.next().await {
-            match doc_result {
-                Ok((doc, doc_metadata)) => {
-                    if doc.timestamp < cutoff_time {
-                        let doc_path = format!("trading_sessions/{}", doc_metadata.name);
-                        if let Err(e) = documents::delete(&self.session, &doc_path, true).await {
-                            warn!("Failed to delete document {}: {}", doc_path, e);
-                        } else {
-                            deleted_count += 1;
-                        }
+        if let Some(documents) = result.documents {
+            for doc in documents {
+                let session: TradingSession = self.firestore_document_to_json(doc.clone())?;
+                if session.timestamp < cutoff_time {
+                    if let Some(name) = doc.name {
+                        let delete_url = format!("https://firestore.googleapis.com/v1/{}", name);
+                        self.client
+                            .delete(&delete_url)
+                            .header(AUTHORIZATION, &auth_token)
+                            .send()
+                            .await?
+                            .error_for_status()?;
+                        deleted_count += 1;
                     }
-                },
-                Err(e) => {
-                    warn!("Error reading trading session document: {}", e);
-                    continue;
                 }
             }
         }
@@ -427,24 +654,31 @@ impl FirestoreDb {
         info!("Deleted {} old documents from trading_sessions", deleted_count);
         
         // Clean up profit tracking
-        let mut stream = documents::list::<ProfitTracking, _>(&self.session, "profit_tracking");
+        let url = self.get_collection_url("profit_tracking");
+        let response = self.client
+            .get(&url)
+            .header(AUTHORIZATION, &auth_token)
+            .send()
+            .await?
+            .error_for_status()?;
+        
+        let result: ListDocumentsResponse = response.json().await?;
         let mut deleted_count = 0;
         
-        while let Some(doc_result) = stream.next().await {
-            match doc_result {
-                Ok((doc, doc_metadata)) => {
-                    if doc.timestamp < cutoff_time {
-                        let doc_path = format!("profit_tracking/{}", doc_metadata.name);
-                        if let Err(e) = documents::delete(&self.session, &doc_path, true).await {
-                            warn!("Failed to delete document {}: {}", doc_path, e);
-                        } else {
-                            deleted_count += 1;
-                        }
+        if let Some(documents) = result.documents {
+            for doc in documents {
+                let profit: ProfitTracking = self.firestore_document_to_json(doc.clone())?;
+                if profit.timestamp < cutoff_time {
+                    if let Some(name) = doc.name {
+                        let delete_url = format!("https://firestore.googleapis.com/v1/{}", name);
+                        self.client
+                            .delete(&delete_url)
+                            .header(AUTHORIZATION, &auth_token)
+                            .send()
+                            .await?
+                            .error_for_status()?;
+                        deleted_count += 1;
                     }
-                },
-                Err(e) => {
-                    warn!("Error reading profit tracking document: {}", e);
-                    continue;
                 }
             }
         }

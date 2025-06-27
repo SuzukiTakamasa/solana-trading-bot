@@ -1,6 +1,8 @@
 use anyhow::{Result, Context};
 use serde::Serialize;
 use tracing::{info, error};
+use chrono::{FixedOffset, TimeZone};
+use chrono_tz::Asia::Tokyo;
 
 #[derive(Debug, Serialize)]
 struct Message {
@@ -68,7 +70,7 @@ impl LineClient {
             Error: {}\n\
             Time: {}",
             error,
-            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+            Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
         );
         
         self.send_message(user_id, &message).await
@@ -85,7 +87,7 @@ impl LineClient {
             Strategy: SOL-USDC Hourly Trading\n\
             Time: {}",
             wallet_address,
-            chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+            Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
         );
         
         self.send_message(user_id, &message).await

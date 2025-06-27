@@ -1,5 +1,6 @@
 use anyhow::Result;
-use chrono::Utc;
+use chrono::{FixedOffset, TimeZone};
+use chrono_tz::Asia::Tokyo;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use solana_client::rpc_client::RpcClient;
@@ -133,7 +134,7 @@ pub async fn check_and_trade(
     if let Some(db) = &state.firestore {
         let price_history = PriceHistory {
             id: generate_session_id(),
-            timestamp: Utc::now(),
+            timestamp: Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()),
             sol_price_usdc: sol_price_in_usdc,
             usdc_price_sol: usdc_price_in_sol,
             data_source: "Jupiter".to_string(),
@@ -209,7 +210,7 @@ pub async fn check_and_trade(
                 if let Some(db) = &state.firestore {
                     let session = TradingSession {
                         id: trading_session_id.clone(),
-                        timestamp: Utc::now(),
+                        timestamp: Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()),
                         position_before: "USDC".to_string(),
                         position_after: "SOL".to_string(),
                         action: "BUY_SOL".to_string(),
@@ -286,7 +287,7 @@ pub async fn check_and_trade(
                 if let Some(db) = &state.firestore {
                     let session = TradingSession {
                         id: trading_session_id.clone(),
-                        timestamp: Utc::now(),
+                        timestamp: Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()),
                         position_before: "SOL".to_string(),
                         position_after: "USDC".to_string(),
                         action: "SELL_SOL".to_string(),
@@ -309,7 +310,7 @@ pub async fn check_and_trade(
                     if profit_loss.is_some() {
                         let profit_tracking = ProfitTracking {
                             id: generate_session_id(),
-                            timestamp: Utc::now(),
+                            timestamp: Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()),
                             trading_session_id,
                             profit_loss_usdc: profit_loss.unwrap_or(dec!(0)),
                             cumulative_profit_usdc: state.total_profit_usdc,
