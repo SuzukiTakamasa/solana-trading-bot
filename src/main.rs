@@ -167,7 +167,7 @@ async fn run_trading_bot() -> Result<()> {
         info!("Performing initial swap: SOL -> USDC");
         match trading::perform_initial_swap(&wallet, &config).await {
             Ok(_) => {
-                line_client.send_startup_notification(&config.line_user_id, &wallet.pubkey().to_string()).await?;
+                line_client.send_startup_notification(&config.line_user_id).await?;
             }
             Err(e) => {
                 line_client.send_error_notification(&config.line_user_id, &format!("{}", e)).await?;

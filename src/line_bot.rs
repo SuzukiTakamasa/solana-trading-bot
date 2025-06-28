@@ -79,14 +79,11 @@ impl LineClient {
     pub async fn send_startup_notification(
         &self,
         user_id: &str,
-        wallet_address: &str,
     ) -> Result<()> {
         let message = format!(
             "🚀 Trading Bot Started!\n\n\
-            Wallet: {}\n\
             Strategy: SOL-USDC Hourly Trading\n\
             Time: {}",
-            wallet_address,
             Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
         );
         
