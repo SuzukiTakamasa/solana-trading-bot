@@ -2,10 +2,10 @@ use anyhow::{Result, Context};
 use serde::{Deserialize, Serialize};
 use solana_sdk::{
     pubkey::Pubkey,
-    transaction::Transaction,
+    transaction::{Transaction, VersionedTransaction},
 };
 use solana_client::rpc_client::RpcClient;
-use tracing::info;
+use tracing::{info, error};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QuoteRequest {
@@ -166,7 +166,7 @@ impl JupiterClient {
             fee_account: None,
             tracking_account: None,
             compute_unit_price_micro_lamports: Some(1000),
-            as_legacy_transaction: false,
+            as_legacy_transaction: true,
             use_token_ledger: false,
             destination_token_account: None,
             dynamic_compute_unit_limit: true,
@@ -186,8 +186,10 @@ impl JupiterClient {
             anyhow::bail!("Swap request failed: {}", error_text);
         }
         
-        let swap: SwapResponse = response.json()
-            .await
+        let response_text = response.text().await?;
+        info!("Swap API response: {}", response_text);
+        
+        let swap: SwapResponse = serde_json::from_str(&response_text)
             .context("Failed to parse swap response")?;
         
         Ok(swap)
@@ -209,11 +211,43 @@ impl JupiterClient {
         let swap_response = self.get_swap_transaction(wallet.pubkey(), quote).await?;
         
         // Deserialize and sign transaction
+        info!("Swap transaction base64 length: {}", swap_response.swap_transaction.len());
+        
         let tx_bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &swap_response.swap_transaction)
             .context("Failed to decode transaction")?;
         
-        let mut transaction: Transaction = bincode::deserialize(&tx_bytes)
-            .context("Failed to deserialize transaction")?;
+        info!("Transaction bytes length: {}", tx_bytes.len());
+        
+        // Try to deserialize as versioned transaction first
+        let (mut transaction, _is_versioned) = match bincode::deserialize::<VersionedTransaction>(&tx_bytes) {
+            Ok(versioned_tx) => {
+                info!("Successfully deserialized as versioned transaction");
+                // Convert versioned transaction to legacy if possible
+                match versioned_tx.into_legacy_transaction() {
+                    Some(legacy_tx) => (legacy_tx, false),
+                    None => {
+                        // If we can't convert to legacy, try to handle it differently
+                        error!("Cannot convert versioned transaction to legacy format");
+                        return Err(anyhow::anyhow!("Jupiter returned a versioned transaction that cannot be converted to legacy format"));
+                    }
+                }
+            }
+            Err(_) => {
+                // Try deserializing as legacy transaction
+                match bincode::deserialize::<Transaction>(&tx_bytes) {
+                    Ok(tx) => {
+                        info!("Successfully deserialized as legacy transaction");
+                        (tx, false)
+                    }
+                    Err(e) => {
+                        error!("Failed to deserialize as both versioned and legacy transaction");
+                        error!("Bincode deserialization error: {:?}", e);
+                        error!("First 100 bytes of tx_bytes: {:?}", &tx_bytes[..tx_bytes.len().min(100)]);
+                        return Err(anyhow::anyhow!("Failed to deserialize transaction: {}", e));
+                    }
+                }
+            }
+        };
         
         // Get recent blockhash
         let recent_blockhash = rpc_client.get_latest_blockhash()
