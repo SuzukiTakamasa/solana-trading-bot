@@ -90,6 +90,7 @@ pub struct SwapRequest {
     pub dynamic_compute_unit_limit: bool,
     #[serde(rename = "skipUserAccountsRpcCalls")]
     pub skip_user_accounts_rpc_calls: bool,
+    #[serde(rename = "quoteResponse")]
     pub quote_response: QuoteResponse,
 }
 
