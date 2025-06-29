@@ -3,7 +3,7 @@ use chrono::{DateTime, FixedOffset, TimeZone};
 use chrono_tz::Asia::Tokyo;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 use gcp_auth::{AuthenticationManager, CustomServiceAccount};
 use reqwest::{Client, header::{AUTHORIZATION, CONTENT_TYPE}};
@@ -262,8 +262,9 @@ impl FirestoreDb {
             FirestoreValue::MapValue { map_value } => {
                 self.firestore_fields_to_json(map_value.fields)?
             },
-            FirestoreValue::Other(_) => {
-                serde_json::Value::Object(serde_json::Map::new()) // Handle as empty object for now
+            FirestoreValue::Other(val) => {
+                warn!("Unknown type value encountered in Firestore document");
+                val
             },
         })
     }

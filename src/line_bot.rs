@@ -20,24 +20,26 @@ struct PushMessage {
 pub struct LineClient {
     client: reqwest::Client,
     channel_token: String,
+    user_id: String
 }
 
 impl LineClient {
-    pub fn new(channel_token: &str) -> Self {
+    pub fn new(channel_token: &str, user_id: &str) -> Self {
         Self {
             client: reqwest::Client::new(),
             channel_token: channel_token.to_string(),
+            user_id: user_id.to_string(),
         }
     }
     
-    pub async fn send_message(&self, user_id: &str, text: &str) -> Result<()> {
+    pub async fn send_message(&self, text: &str) -> Result<()> {
         let message = Message {
             message_type: "text".to_string(),
             text: text.to_string(),
         };
         
         let push_message = PushMessage {
-            to: user_id.to_string(),
+            to: self.user_id.to_string(),
             messages: vec![message],
         };
         
@@ -62,7 +64,6 @@ impl LineClient {
     
     pub async fn send_error_notification(
         &self,
-        user_id: &str,
         error: &str,
     ) -> Result<()> {
         let message = format!(
@@ -73,12 +74,11 @@ impl LineClient {
             Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
         );
         
-        self.send_message(user_id, &message).await
+        self.send_message(&message).await
     }
     
     pub async fn send_startup_notification(
         &self,
-        user_id: &str,
     ) -> Result<()> {
         let message = format!(
             "🚀 Trading Bot Started!\n\n\
@@ -87,7 +87,7 @@ impl LineClient {
             Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
         );
         
-        self.send_message(user_id, &message).await
+        self.send_message(&message).await
     }
     
 }

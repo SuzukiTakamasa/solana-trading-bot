@@ -67,7 +67,7 @@ async fn trigger_trade() -> impl IntoResponse {
 async fn execute_single_trade() -> Result<()> {
     let config = config::Config::from_env()?;
     let wallet = wallet::Wallet::new(&config.private_key)?;
-    let line_client = line_bot::LineClient::new(&config.line_channel_token);
+    let line_client = line_bot::LineClient::new(&config.line_channel_token, &config.line_user_id);
     
     // Initialize Firestore if configured
     let firestore = match firestore::FirestoreDb::new(config.gcp_project_id.clone()).await {
@@ -121,10 +121,20 @@ async fn execute_single_trade() -> Result<()> {
                 Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
             );
             info!("{}", message);
-            line_client.send_message(&config.line_user_id, &message).await?;
+            line_client.send_message(&message).await?;
         }
         Ok(None) => {
+            let message = format!(
+                "🤔 No trading opportunity found.\n\n
+                Current Position: {}\n\
+                Total Profit: {} USDC\n\
+                Time: {}",
+                state.position,
+                state.total_profit_usdc,
+                Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
+            );
             info!("No trading opportunity found");
+            line_client.send_message(&message).await?;
         }
         Err(e) => {
             let message = format!(
@@ -135,7 +145,7 @@ async fn execute_single_trade() -> Result<()> {
                 Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
             );
             error!("Trading error: {}", e);
-            line_client.send_message(&config.line_user_id,&message).await?;
+            line_client.send_message(&message).await?;
             return Err(e);
         }
     }
