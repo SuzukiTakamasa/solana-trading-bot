@@ -126,11 +126,7 @@ async fn execute_single_trade() -> Result<()> {
         Ok(None) => {
             let message = format!(
                 "🤔 Trade skipped.\n\n
-                Current Position: {}\n\
-                Total Profit: {} USDC\n\
                 Time: {}",
-                state.position,
-                state.total_profit_usdc,
                 Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
             );
             info!("No trading opportunity found");
