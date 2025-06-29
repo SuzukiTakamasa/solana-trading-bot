@@ -94,6 +94,7 @@ enum FirestoreValue {
     NullValue { null_value: String },
     ArrayValue { array_value: FirestoreArrayValue },
     MapValue { map_value: FirestoreMapValue },
+    Other(serde_json::Value),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -260,6 +261,9 @@ impl FirestoreDb {
             },
             FirestoreValue::MapValue { map_value } => {
                 self.firestore_fields_to_json(map_value.fields)?
+            },
+            FirestoreValue::Other(_) => {
+                serde_json::Value::Object(serde_json::Map::new()) // Handle as empty object for now
             },
         })
     }
