@@ -125,7 +125,7 @@ async fn execute_single_trade() -> Result<()> {
         }
         Ok(None) => {
             let message = format!(
-                "🤔 No trading opportunity found.\n\n
+                "🤔 Trade skipped.\n\n
                 Current Position: {}\n\
                 Total Profit: {} USDC\n\
                 Time: {}",

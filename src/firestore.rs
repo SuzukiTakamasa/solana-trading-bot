@@ -79,21 +79,47 @@ pub struct TradingPerformance {
 pub struct FirestoreDocument {
     name: Option<String>,
     fields: HashMap<String, FirestoreValue>,
+    #[serde(rename = "createTime")]
     create_time: Option<String>,
+    #[serde(rename = "updateTime")]
     update_time: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 enum FirestoreValue {
-    StringValue { string_value: String },
-    IntegerValue { integer_value: String },
-    DoubleValue { double_value: f64 },
-    BooleanValue { boolean_value: bool },
-    TimestampValue { timestamp_value: String },
-    NullValue { null_value: String },
-    ArrayValue { array_value: FirestoreArrayValue },
-    MapValue { map_value: FirestoreMapValue },
+    StringValue { 
+        #[serde(rename = "stringValue")]
+        string_value: String 
+    },
+    IntegerValue { 
+        #[serde(rename = "integerValue")]
+        integer_value: String 
+    },
+    DoubleValue { 
+        #[serde(rename = "doubleValue")]
+        double_value: f64 
+    },
+    BooleanValue { 
+        #[serde(rename = "booleanValue")]
+        boolean_value: bool 
+    },
+    TimestampValue { 
+        #[serde(rename = "timestampValue")]
+        timestamp_value: String 
+    },
+    NullValue { 
+        #[serde(rename = "nullValue")]
+        null_value: String 
+    },
+    ArrayValue { 
+        #[serde(rename = "arrayValue")]
+        array_value: FirestoreArrayValue 
+    },
+    MapValue { 
+        #[serde(rename = "mapValue")]
+        map_value: FirestoreMapValue 
+    },
     Other(serde_json::Value),
 }
 
@@ -110,6 +136,7 @@ struct FirestoreMapValue {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ListDocumentsResponse {
     documents: Option<Vec<FirestoreDocument>>,
+    #[serde(rename = "nextPageToken")]
     next_page_token: Option<String>,
 }
 
