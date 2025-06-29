@@ -21,7 +21,6 @@ pub struct Config {
     
     // Server configuration
     pub port: u16,
-    pub server_only: bool,
     
     // Firestore configuration
     pub gcp_project_id: String,
@@ -63,11 +62,6 @@ impl Config {
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
                 .context("Invalid PORT")?,
-            
-            server_only: env::var("SERVER_ONLY")
-                .unwrap_or_else(|_| "false".to_string())
-                .parse()
-                .context("Invalid SERVER_ONLY")?,
             
             gcp_project_id: env::var("GCP_PROJECT_ID")
                 .context("GCP_PROJECT_ID must be set")?,

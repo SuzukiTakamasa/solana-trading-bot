@@ -10,8 +10,10 @@ use axum::{extract::Query, response::IntoResponse, routing::get, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::time::{interval, Duration};
 use tracing::{info, error};
+use chrono::{FixedOffset, TimeZone};
+use chrono_tz::Asia::Tokyo;
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,7 +29,7 @@ async fn main() -> Result<()> {
     let config = config::Config::from_env()?;
     info!("Configuration loaded successfully");
 
-    // Start HTTP server for Cloud Run health checks
+    // Start HTTP server
     let app = Router::new()
         .route("/", get(health_check))
         .route("/health", get(health_check))
@@ -39,29 +41,8 @@ async fn main() -> Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     info!("Starting server on {}", addr);
 
-    // Spawn the HTTP server
-    let server = tokio::spawn(async move {
-        let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-        axum::serve(listener, app).await.unwrap();
-    });
-
-    // Start trading bot if not in server-only mode
-    if !config.server_only {
-        let trading_bot = tokio::spawn(async move {
-            if let Err(e) = run_trading_bot().await {
-                error!("Trading bot error: {}", e);
-            }
-        });
-
-        // Wait for either task to complete
-        tokio::select! {
-            _ = server => {},
-            _ = trading_bot => {},
-        }
-    } else {
-        // Just run the server
-        server.await?;
-    }
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }
@@ -100,116 +81,68 @@ async fn execute_single_trade() -> Result<()> {
     // Initialize trading state with persistent storage
     let mut state = trading::TradingState::new();
     if let Some(db) = firestore.clone() {
-        state = state.with_firestore(db);
-        state.load_from_firestore().await?;
-    }
-    
-    let profit = trading::check_and_trade(&wallet, &config, &mut state).await?;
-    
-    if let Some(p) = profit {
-        let message = format!("Trade executed! Position: {}, Profit: {} USDC", state.position, p);
-        line_client.send_message(&config.line_user_id, &message).await?;
-    }
-    
-    Ok(())
-}
-
-async fn run_trading_bot() -> Result<()> {
-    info!("Starting trading bot");
-
-    // Load configuration
-    let config = config::Config::from_env()?;
-    
-    // Initialize wallet
-    let wallet = wallet::Wallet::new(&config.private_key)?;
-    info!("Wallet initialized: {}", wallet.pubkey());
-
-    // Initialize LINE bot client
-    let line_client = line_bot::LineClient::new(&config.line_channel_token);
-    
-    // Initialize Firestore
-    let firestore = match firestore::FirestoreDb::new(config.gcp_project_id.clone()).await {
-        Ok(db) => {
-            info!("Firestore initialized successfully");
-            Some(Arc::new(db))
-        }
-        Err(e) => {
-            error!("Failed to initialize Firestore: {}", e);
-            line_client.send_error_notification(&config.line_user_id, &format!("Firestore initialization failed: {}", e)).await?;
-            None
-        }
-    };
-
-    // Initialize trading state with persistent storage
-    let mut state = trading::TradingState::new();
-    if let Some(db) = firestore.clone() {
         state = state.with_firestore(db.clone());
         if let Err(e) = state.load_from_firestore().await {
             error!("Failed to load trading state from Firestore: {}", e);
         }
         
-        // Schedule periodic cleanup of old data
-        let cleanup_db = db.clone();
-        let cleanup_config = config.clone();
-        tokio::spawn(async move {
-            let mut cleanup_interval = interval(Duration::from_secs(86400)); // 24 hours
-            loop {
-                cleanup_interval.tick().await;
-                if let Err(e) = cleanup_db.cleanup_old_data(cleanup_config.data_retention_days).await {
-                    error!("Failed to cleanup old data: {}", e);
-                }
-            }
-        });
-    }
-
-    // Initial swap: SOL -> USDC (only if starting fresh)
-    if state.total_trades == 0 {
-        info!("Performing initial swap: SOL -> USDC");
-        match trading::perform_initial_swap(&wallet, &config).await {
-            Ok(_) => {
-                line_client.send_startup_notification(&config.line_user_id).await?;
-            }
-            Err(e) => {
-                line_client.send_error_notification(&config.line_user_id, &format!("{}", e)).await?;
-            }
-        }
-    } else {
-        info!("Resuming bot with {} previous trades", state.total_trades);
-        let message = format!("Trading bot resumed: {} trades executed, {} USDC profit", 
-            state.total_trades, state.total_profit_usdc);
-        line_client.send_message(&config.line_user_id, &message).await?;
-    }
-
-    // Start hourly trading loop
-    let mut interval = interval(Duration::from_secs(3600)); // 1 hour
-
-    loop {
-        interval.tick().await;
-        
-        info!("Checking prices for trading opportunity");
-        
-        match trading::check_and_trade(&wallet, &config, &mut state).await {
-            Ok(Some(profit)) => {
-                let message = format!(
-                    "Trade executed! Position: {}, Profit: {} USDC, Total: {} USDC",
-                    state.position, profit, state.total_profit_usdc
-                );
-                info!("{}", message);
-                line_client.send_message(&config.line_user_id, &message).await?;
-            }
-            Ok(None) => {
-                info!("No trading opportunity found");
-            }
-            Err(e) => {
-                error!("Trading error: {}", e);
-                line_client.send_message(
-                    &config.line_user_id,
-                    &format!("Trading error: {}", e)
-                ).await?;
-            }
+        // Cleanup old data (this replaces the periodic cleanup task)
+        if let Err(e) = db.cleanup_old_data(config.data_retention_days).await {
+            error!("Failed to cleanup old data: {}", e);
         }
     }
+    
+    // Check if initial swap is needed (first trade)
+    // if state.total_trades == 0 {
+    //    info!("Performing initial swap: SOL -> USDC");
+    //    match trading::perform_initial_swap(&wallet, &config).await {
+    //        Ok(_) => {
+    //            line_client.send_startup_notification(&config.line_user_id).await?;
+    //        }
+    //        Err(e) => {
+    //            line_client.send_error_notification(&config.line_user_id, &format!("{}", e)).await?;
+    //            return Err(e);
+    //        }
+    //    }
+    //}
+    
+    // Execute the trade
+    match trading::check_and_trade(&wallet, &config, &mut state).await {
+        Ok(Some(profit)) => {
+            let message = format!(
+                "😎 Trade executed!\n\n
+                Position: {}\n\
+                Profit: {} USDC\n\
+                Total: {} USDC\n\
+                Time: {}",
+                state.position,
+                profit,
+                state.total_profit_usdc,
+                Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
+            );
+            info!("{}", message);
+            line_client.send_message(&config.line_user_id, &message).await?;
+        }
+        Ok(None) => {
+            info!("No trading opportunity found");
+        }
+        Err(e) => {
+            let message = format!(
+                "🥺 Trading error...\n\n
+                {}\n\
+                Time: {}",
+                e,
+                Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
+            );
+            error!("Trading error: {}", e);
+            line_client.send_message(&config.line_user_id,&message).await?;
+            return Err(e);
+        }
+    }
+    
+    Ok(())
 }
+
 
 #[derive(Deserialize)]
 struct PerformanceQuery {
