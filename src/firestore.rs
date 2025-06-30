@@ -490,7 +490,7 @@ impl FirestoreDb {
     }
     
     async fn get_price_at_time(&self, time: DateTime<FixedOffset>) -> Result<Option<Decimal>> {
-        let url = format!("{}{}", self.get_collection_url("price_history"), "?pageSize=1&orderBy=timestamp%20desc");
+        let url = format!("{}{}", self.get_collection_url("price_history"), "?pageSize=300&orderBy=timestamp%20desc");
         let auth_token = self.get_auth_token().await?;
         
         let response = self.client
