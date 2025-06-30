@@ -387,7 +387,7 @@ fn should_make_trade(
             
             let trending_up = trend.trend_1h.as_ref().map(|t| t == "up").unwrap_or(false);
             let below_24h = trend.price_24h_ago
-                .map(|p| sol_price < p * dec!(0.98)) // 2% below 24h price
+                .map(|p| sol_price < p * dec!(0.99)) // 1% below 24h price
                 .unwrap_or(false);
             let low_volatility = trend.volatility_1h
                 .map(|v| v < dec!(2.0)) // Less than 2% volatility
@@ -406,7 +406,7 @@ fn should_make_trade(
                 .unwrap_or(false);
             let trending_down = trend.trend_1h.as_ref().map(|t| t == "down").unwrap_or(false);
             let above_24h = trend.price_24h_ago
-                .map(|p| sol_price > p * dec!(1.02)) // 2% above 24h price
+                .map(|p| sol_price > p * dec!(1.01)) // 1% above 24h price
                 .unwrap_or(false);
             
             has_profit && (trending_down || above_24h)
@@ -423,15 +423,15 @@ fn should_make_trade_simple(
 ) -> bool {
     match position {
         Position::USDC => {
-            // Buy if price dropped more than 2% from last trade
+            // Buy if price dropped more than 1% from last trade
             state.last_sol_price
-                .map(|last| sol_price < last * dec!(0.98))
+                .map(|last| sol_price < last * dec!(0.99))
                 .unwrap_or(false)
         }
         Position::SOL => {
-            // Sell if we have more than 2% profit
+            // Sell if we have more than 1% profit
             state.last_sol_price
-                .map(|last| sol_price > last * dec!(1.02))
+                .map(|last| sol_price > last * dec!(1.01))
                 .unwrap_or(false)
         }
     }
