@@ -44,7 +44,7 @@ variable "solana_rpc_url" {
 variable "jupiter_api_url" {
   description = "Jupiter DEX API endpoint URL"
   type        = string
-  default     = "https://lite-api.jup.ag"
+  default     = "https://quote-api.jup.ag/v6"
 }
 
 variable "slippage_bps" {
