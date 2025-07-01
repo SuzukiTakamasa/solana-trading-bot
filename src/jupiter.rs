@@ -153,15 +153,7 @@ impl JupiterClient {
         if !status.is_success() {
             let error_text = response.text().await.unwrap_or_else(|_| "Unable to read error response".to_string());
             error!("Quote request failed with status {}: {}", status, error_text);
-            
-            // Provide more specific error messages based on status code
-            match status.as_u16() {
-                400 => anyhow::bail!("Invalid request parameters: {}", error_text),
-                404 => anyhow::bail!("Jupiter API endpoint not found. Please check the API URL configuration."),
-                429 => anyhow::bail!("Rate limit exceeded. Please try again later."),
-                500..=599 => anyhow::bail!("Jupiter API server error: {}", error_text),
-                _ => anyhow::bail!("Quote request failed (status {}): {}", status, error_text),
-            }
+            anyhow::bail!("Quote request failed (status {}): {}", status, error_text)
         }
         
         let response_text = response.text().await
@@ -211,18 +203,27 @@ impl JupiterClient {
             .json(&swap_request)
             .send()
             .await
-            .context("Failed to send swap request")?;
+            .map_err(|e| {
+                error!("Failed to send swap request to {}: {}", url, e);
+                anyhow::anyhow!("Failed to send swap request: {}. Please check your internet connection and Jupiter API URL.", e)
+            })?;
         
-        if !response.status().is_success() {
+        let status = response.status();
+        if !status.is_success() {
             let error_text = response.text().await?;
+            error!("Swap request failed with status {}: {}", status, error_text);
             anyhow::bail!("Swap request failed: {}", error_text);
         }
         
-        let response_text = response.text().await?;
-        info!("Swap API response: {}", response_text);
+        let response_text = response.text().await
+            .context("Failed to read swap response body")?;
         
         let swap: SwapResponse = serde_json::from_str(&response_text)
-            .context("Failed to parse swap response")?;
+            .map_err(|e| {
+                error!("Failed to parse swap response: {}", e);
+                error!("Response text: {}", response_text);
+                anyhow::anyhow!("Failed to parse swap response: {}", e)
+            })?;
         
         Ok(swap)
     }
