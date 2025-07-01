@@ -107,8 +107,14 @@ pub struct JupiterClient {
 
 impl JupiterClient {
     pub fn new(api_url: &str) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .user_agent("solana-trading-bot/1.0")
+            .build()
+            .expect("Failed to build HTTP client");
+            
         Self {
-            client: reqwest::Client::new(),
+            client,
             api_url: api_url.to_string(),
         }
     }
@@ -122,6 +128,11 @@ impl JupiterClient {
     ) -> Result<QuoteResponse> {
         let url = format!("{}/quote", self.api_url);
         
+        info!(
+            "Requesting quote: {} {} -> {} (slippage: {} bps)",
+            amount, input_mint, output_mint, slippage_bps
+        );
+        
         let response = self.client
             .get(&url)
             .query(&[
@@ -130,23 +141,44 @@ impl JupiterClient {
                 ("amount", &amount.to_string()),
                 ("slippageBps", &slippage_bps.to_string()),
             ])
+            .header("Accept", "application/json")
             .send()
             .await
-            .context("Failed to send quote request")?;
+            .map_err(|e| {
+                error!("Failed to send quote request to {}: {}", url, e);
+                anyhow::anyhow!("Failed to send quote request: {}. Please check your internet connection and Jupiter API URL.", e)
+            })?;
         
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            anyhow::bail!("Quote request failed: {}", error_text);
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unable to read error response".to_string());
+            error!("Quote request failed with status {}: {}", status, error_text);
+            
+            // Provide more specific error messages based on status code
+            match status.as_u16() {
+                400 => anyhow::bail!("Invalid request parameters: {}", error_text),
+                404 => anyhow::bail!("Jupiter API endpoint not found. Please check the API URL configuration."),
+                429 => anyhow::bail!("Rate limit exceeded. Please try again later."),
+                500..=599 => anyhow::bail!("Jupiter API server error: {}", error_text),
+                _ => anyhow::bail!("Quote request failed (status {}): {}", status, error_text),
+            }
         }
         
-        let quote: QuoteResponse = response.json()
-            .await
-            .context("Failed to parse quote response")?;
+        let response_text = response.text().await
+            .context("Failed to read response body")?;
+            
+        let quote: QuoteResponse = serde_json::from_str(&response_text)
+            .map_err(|e| {
+                error!("Failed to parse quote response: {}", e);
+                error!("Response text: {}", response_text);
+                anyhow::anyhow!("Failed to parse quote response: {}", e)
+            })?;
         
         info!(
-            "Quote received: {} {} -> {} {}",
+            "Quote received: {} {} -> {} {} (price impact: {}%)",
             quote.in_amount, input_mint,
-            quote.out_amount, output_mint
+            quote.out_amount, output_mint,
+            quote.price_impact_pct
         );
         
         Ok(quote)
@@ -275,12 +307,20 @@ pub async fn get_price(
     to_mint: &str,
     amount: u64,
 ) -> Result<f64> {
-    let quote = jupiter_client.get_quote(from_mint, to_mint, amount, 0).await?;
+    let quote = jupiter_client.get_quote(from_mint, to_mint, amount, 0).await
+        .map_err(|e| {
+            error!("Failed to get price quote for {} -> {}: {}", from_mint, to_mint, e);
+            e
+        })?;
     
     let in_amount = quote.in_amount.parse::<f64>()
         .context("Failed to parse input amount")?;
     let out_amount = quote.out_amount.parse::<f64>()
         .context("Failed to parse output amount")?;
+    
+    if in_amount == 0.0 {
+        anyhow::bail!("Invalid input amount: 0");
+    }
     
     Ok(out_amount / in_amount)
 }

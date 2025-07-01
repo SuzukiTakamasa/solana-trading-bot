@@ -110,12 +110,11 @@ async fn execute_single_trade() -> Result<()> {
     match trading::check_and_trade(&wallet, &config, &mut state).await {
         Ok(Some(profit)) => {
             let message = format!(
-                r#"😎 Trade executed!
-
-                Position: {}
-                Profit: {} USDC
-                Total: {} USDC
-                Time: {}"#,
+                "😎 Trade executed!\n\
+                Position: {}\n\
+                Profit: {} USDC\n\
+                Total: {} USDC\n\
+                Time: {}",
                 state.position,
                 profit,
                 state.total_profit_usdc,
@@ -126,9 +125,8 @@ async fn execute_single_trade() -> Result<()> {
         }
         Ok(None) => {
             let message = format!(
-                r#"🤔 Trade skipped.
-
-                Time: {}"#,
+                "🤔 Trade skipped.\n\
+                Time: {}",
                 Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
             );
             info!("No trading opportunity found");
@@ -136,10 +134,9 @@ async fn execute_single_trade() -> Result<()> {
         }
         Err(e) => {
             let message = format!(
-                r#"🥺 Trading error...
-                
+                "🥺 Trading error...\n\
                 {}\n\
-                Time: {}"#,
+                Time: {}",
                 e,
                 Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
             );
