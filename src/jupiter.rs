@@ -7,41 +7,37 @@ use solana_sdk::{
 use solana_client::rpc_client::RpcClient;
 use tracing::{info, error};
 
-// QuoteRequest is not needed as we use query parameters directly
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QuoteRequest {
+    #[serde(rename = "inputMint")]
+    pub input_mint: String,
+    #[serde(rename = "outputMint")]
+    pub output_mint: String,
+    pub amount: String,
+    #[serde(rename = "slippageBps")]
+    pub slippage_bps: u16,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QuoteResponse {
     #[serde(rename = "inputMint")]
     pub input_mint: String,
     #[serde(rename = "inAmount")]
-    pub in_amount: u64,
+    pub in_amount: String,
     #[serde(rename = "outputMint")]
     pub output_mint: String,
     #[serde(rename = "outAmount")]
-    pub out_amount: u64,
+    pub out_amount: String,
     #[serde(rename = "otherAmountThreshold")]
-    pub other_amount_threshold: u64,
+    pub other_amount_threshold: String,
     #[serde(rename = "swapMode")]
     pub swap_mode: String,
     #[serde(rename = "slippageBps")]
     pub slippage_bps: u16,
-    #[serde(rename = "platformFee")]
-    pub platform_fee: Option<PlatformFee>,
     #[serde(rename = "priceImpactPct")]
     pub price_impact_pct: String,
     #[serde(rename = "routePlan")]
     pub route_plan: Vec<RoutePlanStep>,
-    #[serde(rename = "contextSlot")]
-    pub context_slot: Option<u64>,
-    #[serde(rename = "timeTaken")]
-    pub time_taken: Option<f64>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PlatformFee {
-    pub amount: String,
-    #[serde(rename = "feeBps")]
-    pub fee_bps: u16,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -55,7 +51,7 @@ pub struct RoutePlanStep {
 pub struct SwapInfo {
     #[serde(rename = "ammKey")]
     pub amm_key: String,
-    pub label: String,
+    pub label: Option<String>,
     #[serde(rename = "inputMint")]
     pub input_mint: String,
     #[serde(rename = "outputMint")]
@@ -70,48 +66,38 @@ pub struct SwapInfo {
     pub fee_mint: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PriorityFeeLevel {
-    #[serde(rename = "maxLamports")]
-    pub max_lamports: u64,
-    #[serde(rename = "priorityLevel")]
-    pub priority_level: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PrioritizationFee {
-    Auto(String),
-    Manual {
-        #[serde(rename = "priorityLevelWithMaxLamports")]
-        priority_level_with_max_lamports: PriorityFeeLevel,
-    },
-}
-
 #[derive(Debug, Serialize)]
 pub struct SwapRequest {
-    #[serde(rename = "quoteResponse")]
-    pub quote_response: QuoteResponse,
     #[serde(rename = "userPublicKey")]
     pub user_public_key: String,
     #[serde(rename = "wrapAndUnwrapSol")]
     pub wrap_and_unwrap_sol: bool,
-    #[serde(rename = "dynamicComputeUnitLimit")]
-    pub dynamic_compute_unit_limit: bool,
-    #[serde(rename = "dynamicSlippage")]
-    pub dynamic_slippage: bool,
-    #[serde(rename = "prioritizationFeeLamports")]
-    pub prioritization_fee_lamports: Option<PrioritizationFee>,
+    #[serde(rename = "useSharedAccounts")]
+    pub use_shared_accounts: bool,
+    #[serde(rename = "feeAccount")]
+    pub fee_account: Option<String>,
+    #[serde(rename = "trackingAccount")]
+    pub tracking_account: Option<String>,
+    #[serde(rename = "computeUnitPriceMicroLamports")]
+    pub compute_unit_price_micro_lamports: Option<u64>,
+    #[serde(rename = "asLegacyTransaction")]
+    pub as_legacy_transaction: bool,
     #[serde(rename = "useTokenLedger")]
     pub use_token_ledger: bool,
+    #[serde(rename = "destinationTokenAccount")]
+    pub destination_token_account: Option<String>,
+    #[serde(rename = "dynamicComputeUnitLimit")]
+    pub dynamic_compute_unit_limit: bool,
+    #[serde(rename = "skipUserAccountsRpcCalls")]
+    pub skip_user_accounts_rpc_calls: bool,
+    #[serde(rename = "quoteResponse")]
+    pub quote_response: QuoteResponse,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct SwapResponse {
     #[serde(rename = "swapTransaction")]
     pub swap_transaction: String,
-    #[serde(rename = "lastValidBlockHeight")]
-    pub last_valid_block_height: u64,
 }
 
 pub struct JupiterClient {
@@ -121,14 +107,8 @@ pub struct JupiterClient {
 
 impl JupiterClient {
     pub fn new(api_url: &str) -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .user_agent("solana-trading-bot/1.0")
-            .build()
-            .expect("Failed to create HTTP client");
-            
         Self {
-            client,
+            client: reqwest::Client::new(),
             api_url: api_url.to_string(),
         }
     }
@@ -142,10 +122,6 @@ impl JupiterClient {
     ) -> Result<QuoteResponse> {
         let url = format!("{}/quote", self.api_url);
         
-        info!("Requesting quote from Jupiter API: {}", url);
-        info!("Parameters - inputMint: {}, outputMint: {}, amount: {}, slippageBps: {}", 
-            input_mint, output_mint, amount, slippage_bps);
-        
         let response = self.client
             .get(&url)
             .query(&[
@@ -153,17 +129,10 @@ impl JupiterClient {
                 ("outputMint", output_mint),
                 ("amount", &amount.to_string()),
                 ("slippageBps", &slippage_bps.to_string()),
-                ("swapMode", "ExactIn"),
-                ("restrictIntermediateTokens", "false"),
-                ("onlyDirectRoutes", "false"),
-                ("maxAccounts", "64"),
             ])
             .send()
             .await
-            .map_err(|e| {
-                error!("HTTP request failed: {}", e);
-                anyhow::anyhow!("Failed to send quote request to {}: {}", url, e)
-            })?;
+            .context("Failed to send quote request")?;
         
         if !response.status().is_success() {
             let error_text = response.text().await?;
@@ -190,21 +159,19 @@ impl JupiterClient {
     ) -> Result<SwapResponse> {
         let url = format!("{}/swap", self.api_url);
         
-        info!("Requesting swap transaction from Jupiter API: {}", url);
-        
         let swap_request = SwapRequest {
-            quote_response: quote,
             user_public_key: user_public_key.to_string(),
             wrap_and_unwrap_sol: true,
-            dynamic_compute_unit_limit: true,
-            dynamic_slippage: true,
-            prioritization_fee_lamports: Some(PrioritizationFee::Manual {
-                priority_level_with_max_lamports: PriorityFeeLevel {
-                    max_lamports: 1000000,
-                    priority_level: "high".to_string(),
-                },
-            }),
+            use_shared_accounts: true,
+            fee_account: None,
+            tracking_account: None,
+            compute_unit_price_micro_lamports: Some(1000),
+            as_legacy_transaction: true,
             use_token_ledger: false,
+            destination_token_account: None,
+            dynamic_compute_unit_limit: true,
+            skip_user_accounts_rpc_calls: false,
+            quote_response: quote,
         };
         
         let response = self.client
@@ -212,10 +179,7 @@ impl JupiterClient {
             .json(&swap_request)
             .send()
             .await
-            .map_err(|e| {
-                error!("HTTP request failed: {}", e);
-                anyhow::anyhow!("Failed to send swap request to {}: {}", url, e)
-            })?;
+            .context("Failed to send swap request")?;
         
         if !response.status().is_success() {
             let error_text = response.text().await?;
@@ -254,32 +218,31 @@ impl JupiterClient {
         
         info!("Transaction bytes length: {}", tx_bytes.len());
         
-        // The new API may return either versioned or legacy transactions
-        // We'll try to deserialize as versioned first, then fall back to legacy
+        // Try to deserialize as versioned transaction first
         let (mut transaction, _is_versioned) = match bincode::deserialize::<VersionedTransaction>(&tx_bytes) {
             Ok(versioned_tx) => {
                 info!("Successfully deserialized as versioned transaction");
-                // For now, we'll try to convert to legacy for compatibility
+                // Convert versioned transaction to legacy if possible
                 match versioned_tx.into_legacy_transaction() {
                     Some(legacy_tx) => (legacy_tx, false),
                     None => {
-                        // If conversion fails, we need to handle versioned transactions
-                        // For now, let's request legacy transactions instead
+                        // If we can't convert to legacy, try to handle it differently
                         error!("Cannot convert versioned transaction to legacy format");
-                        return Err(anyhow::anyhow!("Versioned transaction support not fully implemented. Please set as_legacy_transaction to true."));
+                        return Err(anyhow::anyhow!("Jupiter returned a versioned transaction that cannot be converted to legacy format"));
                     }
                 }
             }
             Err(_) => {
-                // Try deserializing as legacy transaction as fallback
+                // Try deserializing as legacy transaction
                 match bincode::deserialize::<Transaction>(&tx_bytes) {
                     Ok(tx) => {
                         info!("Successfully deserialized as legacy transaction");
                         (tx, false)
                     }
                     Err(e) => {
-                        error!("Failed to deserialize transaction");
-                        error!("Deserialization error: {:?}", e);
+                        error!("Failed to deserialize as both versioned and legacy transaction");
+                        error!("Bincode deserialization error: {:?}", e);
+                        error!("First 100 bytes of tx_bytes: {:?}", &tx_bytes[..tx_bytes.len().min(100)]);
                         return Err(anyhow::anyhow!("Failed to deserialize transaction: {}", e));
                     }
                 }
