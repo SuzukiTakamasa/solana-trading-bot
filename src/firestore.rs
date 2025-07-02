@@ -255,8 +255,12 @@ impl FirestoreDb {
     }
     
     pub fn firestore_document_to_json<T: for<'de> Deserialize<'de>>(&self, doc: FirestoreDocument) -> Result<T> {
-        let json_value = self.firestore_fields_to_json(doc.fields)?;
-        serde_json::from_value(json_value).map_err(|e| anyhow::anyhow!("Failed to deserialize: {}", e))
+        let json_value = self.firestore_fields_to_json(doc.fields.clone())?;
+        
+        serde_json::from_value(json_value).map_err(|e| {
+            error!("Failed to deserialize document. Raw fields: {:?}", doc.fields);
+            anyhow::anyhow!("Failed to deserialize: {}", e)
+        })
     }
     
     fn firestore_fields_to_json(&self, fields: HashMap<String, FirestoreValue>) -> Result<JsonValue> {
@@ -287,6 +291,50 @@ impl FirestoreDb {
                 JsonValue::Array(values)
             },
             FirestoreValue::MapValue { map_value } => {
+                // Special handling for Decimal values that might have been stored as maps
+                // Check if this is a Decimal stored as a map (legacy format)
+                
+                // First check for single-field maps that might be Decimal representations
+                if map_value.fields.len() == 1 {
+                    if let Some((key, val)) = map_value.fields.iter().next() {
+                        if key == "$serde_json::private::Number" || key.contains("decimal") || key == "value" {
+                            // Try to extract the string value from the nested structure
+                            match val {
+                                FirestoreValue::StringValue { string_value } => {
+                                    return Ok(JsonValue::String(string_value.clone()));
+                                }
+                                FirestoreValue::DoubleValue { double_value } => {
+                                    // Convert double to string for Decimal
+                                    return Ok(JsonValue::String(double_value.to_string()));
+                                }
+                                FirestoreValue::IntegerValue { integer_value } => {
+                                    // Convert integer to string for Decimal
+                                    return Ok(JsonValue::String(integer_value.clone()));
+                                }
+                                FirestoreValue::MapValue { map_value: nested_map } => {
+                                    // Handle nested map (possibly double-wrapped)
+                                    if nested_map.fields.len() == 1 {
+                                        if let Some((_, nested_val)) = nested_map.fields.iter().next() {
+                                            return self.firestore_value_to_json(nested_val.clone());
+                                        }
+                                    }
+                                }
+                                _ => {
+                                    warn!("Unexpected value type for Decimal field: {:?}", val);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Also check for specific decimal field patterns
+                if map_value.fields.contains_key("lo") || map_value.fields.contains_key("mid") || map_value.fields.contains_key("hi") {
+                    // This might be a rust_decimal internal representation
+                    // For now, return a default value to avoid deserialization errors
+                    warn!("Found potential rust_decimal internal representation, returning zero");
+                    return Ok(JsonValue::String("0".to_string()));
+                }
+                
                 self.firestore_fields_to_json(map_value.fields)?
             },
             FirestoreValue::Other(val) => {
@@ -594,6 +642,28 @@ impl FirestoreDb {
     
     pub async fn get_latest_profit_tracking(&self) -> Result<Option<ProfitTracking>> {
         let url = format!("{}{}", self.get_collection_url("profit_tracking"), "?pageSize=1&orderBy=timestamp%20desc");
+        let auth_token = self.get_auth_token().await?;
+        
+        let response = self.client
+            .get(&url)
+            .header(AUTHORIZATION, auth_token)
+            .send()
+            .await?
+            .error_for_status()?;
+        
+        let result: ListDocumentsResponse = response.json().await?;
+        
+        if let Some(documents) = result.documents {
+            if let Some(doc) = documents.into_iter().next() {
+                return Ok(Some(self.firestore_document_to_json(doc)?));
+            }
+        }
+        
+        Ok(None)
+    }
+    
+    pub async fn get_latest_trading_session(&self) -> Result<Option<TradingSession>> {
+        let url = format!("{}{}", self.get_collection_url("trading_sessions"), "?pageSize=1&orderBy=timestamp%20desc");
         let auth_token = self.get_auth_token().await?;
         
         let response = self.client

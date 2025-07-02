@@ -1,8 +1,6 @@
 use anyhow::{Result, Context};
 use serde::Serialize;
 use tracing::{info, error};
-use chrono::{FixedOffset, TimeZone};
-use chrono_tz::Asia::Tokyo;
 
 #[derive(Debug, Serialize)]
 struct Message {
@@ -61,7 +59,7 @@ impl LineClient {
         info!("LINE message sent successfully");
         Ok(())
     }
-    
+    /*
     pub async fn send_error_notification(
         &self,
         error: &str,
@@ -89,5 +87,6 @@ impl LineClient {
         
         self.send_message(&message).await
     }
+    */
     
 }

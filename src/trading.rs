@@ -63,6 +63,16 @@ impl TradingState {
     
     pub async fn load_from_firestore(&mut self) -> Result<()> {
         if let Some(db) = &self.firestore {
+            // Load position from latest trading session
+            if let Ok(Some(latest_session)) = db.get_latest_trading_session().await {
+                self.position = match latest_session.position_after.as_str() {
+                    "SOL" => Position::SOL,
+                    "USDC" => Position::USDC,
+                    _ => Position::USDC, // Default to USDC if unknown
+                };
+                info!("Loaded position from latest trading session: {}", self.position);
+            }
+            
             if let Ok(Some(latest_profit)) = db.get_latest_profit_tracking().await {
                 self.total_profit_usdc = latest_profit.cumulative_profit_usdc;
                 self.total_trades = latest_profit.total_trades;
@@ -81,6 +91,7 @@ impl TradingState {
     }
 }
 
+/*
 pub async fn perform_initial_swap(wallet: &Wallet, config: &Config) -> Result<()> {
     let rpc_client = RpcClient::new(&config.rpc_url);
     let jupiter_client = JupiterClient::new(&config.jupiter_api_url);
@@ -112,6 +123,7 @@ pub async fn perform_initial_swap(wallet: &Wallet, config: &Config) -> Result<()
     
     Ok(())
 }
+*/
 
 pub async fn check_and_trade(
     wallet: &Wallet,

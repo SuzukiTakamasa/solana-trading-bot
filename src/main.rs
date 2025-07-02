@@ -92,19 +92,21 @@ async fn execute_single_trade() -> Result<()> {
         }
     }
     
-    // Check if initial swap is needed (first trade)
-    // if state.total_trades == 0 {
-    //    info!("Performing initial swap: SOL -> USDC");
-    //    match trading::perform_initial_swap(&wallet, &config).await {
-    //        Ok(_) => {
-    //            line_client.send_startup_notification(&config.line_user_id).await?;
-    //        }
-    //        Err(e) => {
-    //            line_client.send_error_notification(&config.line_user_id, &format!("{}", e)).await?;
-    //            return Err(e);
-    //        }
-    //    }
-    //}
+    /*
+     Check if initial swap is needed (first trade)
+     if state.total_trades == 0 {
+        info!("Performing initial swap: SOL -> USDC");
+        match trading::perform_initial_swap(&wallet, &config).await {
+            Ok(_) => {
+                line_client.send_startup_notification(&config.line_user_id).await?;
+            }
+            Err(e) => {
+                line_client.send_error_notification(&config.line_user_id, &format!("{}", e)).await?;
+                return Err(e);
+            }
+        }
+    }
+    */
     
     // Execute the trade
     match trading::check_and_trade(&wallet, &config, &mut state).await {
