@@ -338,7 +338,13 @@ impl FirestoreDb {
                 self.firestore_fields_to_json(map_value.fields)?
             },
             FirestoreValue::Other(val) => {
-                warn!("Unknown type value encountered in Firestore document");
+                // Handle null values that come as {"nullValue": null}
+                if let Some(obj) = val.as_object() {
+                    if obj.contains_key("nullValue") {
+                        return Ok(JsonValue::Null);
+                    }
+                }
+                warn!("Unknown type value encountered in Firestore document: {:?}", val);
                 val
             },
         })
