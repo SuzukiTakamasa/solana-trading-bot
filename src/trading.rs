@@ -327,7 +327,7 @@ pub async fn check_and_trade(
                             } else {
                                 dec!(0)
                             },
-                            total_trades: state.total_trades += 1,
+                            total_trades: state.total_trades + 1,
                             winning_trades: state.winning_trades,
                             losing_trades: state.losing_trades,
                         };
