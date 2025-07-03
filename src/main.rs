@@ -7,6 +7,7 @@ mod wallet;
 
 use anyhow::Result;
 use axum::{extract::Query, response::IntoResponse, routing::get, Json, Router};
+use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -118,8 +119,8 @@ async fn execute_single_trade() -> Result<()> {
                 Total: {} USDC\n\
                 Time: {}",
                 state.position,
-                profit,
-                state.total_profit_usdc,
+                profit * Decimal::from(1_000_000_000u64),
+                state.total_profit_usdc * Decimal::from(1_000_000_000u64),
                 Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
             );
             info!("{}", message);

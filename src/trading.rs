@@ -390,14 +390,14 @@ fn should_make_trade(
             // 3. Volatility is reasonable
             
             let trending_up = trend.trend_1h.as_ref().map(|t| t == "up").unwrap_or(false);
-            let below_24h = trend.price_24h_ago
+            /*let below_24h = trend.price_24h_ago
                 .map(|p| sol_price < p * dec!(0.99)) // 1% below 24h price
-                .unwrap_or(false);
+                .unwrap_or(false);*/
             let low_volatility = trend.volatility_1h
-                .map(|v| v < dec!(2.0)) // Less than 2% volatility
+                .map(|v| v < dec!(5.0)) // Less than 5% volatility
                 .unwrap_or(true);
             
-            trending_up && below_24h && low_volatility
+            trending_up && low_volatility
         }
         Position::SOL => {
             // Sell SOL if:
@@ -409,11 +409,11 @@ fn should_make_trade(
                 .map(|last| sol_price > last * dec!(1.01)) // 1% profit
                 .unwrap_or(false);
             let trending_down = trend.trend_1h.as_ref().map(|t| t == "down").unwrap_or(false);
-            let above_24h = trend.price_24h_ago
+            /*let above_24h = trend.price_24h_ago
                 .map(|p| sol_price > p * dec!(1.01)) // 1% above 24h price
-                .unwrap_or(false);
+                .unwrap_or(false);*/
             
-            has_profit && (trending_down || above_24h)
+            has_profit && trending_down
         }
     }
 }
