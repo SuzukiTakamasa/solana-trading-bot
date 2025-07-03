@@ -241,10 +241,6 @@ pub async fn check_and_trade(
                         error!("Failed to store trading session: {}", e);
                     }
                 }
-                
-                state.position = Position::SOL;
-                state.last_sol_price = Some(sol_price_in_usdc);
-                state.total_trades += 1;
             }
         }
         Position::SOL => {
@@ -331,7 +327,7 @@ pub async fn check_and_trade(
                             } else {
                                 dec!(0)
                             },
-                            total_trades: state.total_trades,
+                            total_trades: state.total_trades + 1,
                             winning_trades: state.winning_trades,
                             losing_trades: state.losing_trades,
                         };
@@ -341,10 +337,6 @@ pub async fn check_and_trade(
                         }
                     }
                 }
-                
-                state.position = Position::USDC;
-                state.last_usdc_price = Some(usdc_price_in_sol);
-                state.total_trades += 1;
             }
         }
     }
