@@ -108,7 +108,10 @@ pub struct JupiterClient {
 impl JupiterClient {
     pub fn new(api_url: &str) -> Self {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(120))
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .pool_max_idle_per_host(0)
             .user_agent("solana-trading-bot/1.0")
             .build()
             .expect("Failed to build HTTP client");
@@ -133,21 +136,44 @@ impl JupiterClient {
             amount, input_mint, output_mint, slippage_bps
         );
         
-        let response = self.client
-            .get(&url)
-            .query(&[
-                ("inputMint", input_mint),
-                ("outputMint", output_mint),
-                ("amount", &amount.to_string()),
-                ("slippageBps", &slippage_bps.to_string()),
-            ])
-            .header("Accept", "application/json")
-            .send()
-            .await
-            .map_err(|e| {
-                error!("Failed to send quote request to {}: {}", url, e);
-                anyhow::anyhow!("Failed to send quote request: {}. Please check your internet connection and Jupiter API URL.", e)
-            })?;
+        let max_retries = 3;
+        let mut retry_count = 0;
+        
+        loop {
+            match self.client
+                .get(&url)
+                .query(&[
+                    ("inputMint", input_mint),
+                    ("outputMint", output_mint),
+                    ("amount", &amount.to_string()),
+                    ("slippageBps", &slippage_bps.to_string()),
+                ])
+                .header("Accept", "application/json")
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    let response = response;
+                    break Ok(response);
+                }
+                Err(e) => {
+                    retry_count += 1;
+                    error!("Quote request attempt {} failed: {}", retry_count, e);
+                    
+                    if retry_count >= max_retries {
+                        error!("Failed to send quote request to {} after {} attempts: {}", url, max_retries, e);
+                        return Err(anyhow::anyhow!(
+                            "Failed to send quote request after {} attempts: {}. Please check your internet connection and Jupiter API URL.", 
+                            max_retries, e
+                        ));
+                    }
+                    
+                    let delay = std::time::Duration::from_millis(500 * retry_count as u64);
+                    info!("Retrying quote request in {:?}...", delay);
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        }?;
         
         let status = response.status();
         if !status.is_success() {
@@ -198,15 +224,35 @@ impl JupiterClient {
             quote_response: quote,
         };
         
-        let response = self.client
-            .post(&url)
-            .json(&swap_request)
-            .send()
-            .await
-            .map_err(|e| {
-                error!("Failed to send swap request to {}: {}", url, e);
-                anyhow::anyhow!("Failed to send swap request: {}. Please check your internet connection and Jupiter API URL.", e)
-            })?;
+        let max_retries = 3;
+        let mut retry_count = 0;
+        
+        let response = loop {
+            match self.client
+                .post(&url)
+                .json(&swap_request)
+                .send()
+                .await
+            {
+                Ok(response) => break response,
+                Err(e) => {
+                    retry_count += 1;
+                    error!("Swap request attempt {} failed: {}", retry_count, e);
+                    
+                    if retry_count >= max_retries {
+                        error!("Failed to send swap request to {} after {} attempts: {}", url, max_retries, e);
+                        return Err(anyhow::anyhow!(
+                            "Failed to send swap request after {} attempts: {}. Please check your internet connection and Jupiter API URL.", 
+                            max_retries, e
+                        ));
+                    }
+                    
+                    let delay = std::time::Duration::from_millis(500 * retry_count as u64);
+                    info!("Retrying swap request in {:?}...", delay);
+                    tokio::time::sleep(delay).await;
+                }
+            }
+        };
         
         let status = response.status();
         if !status.is_success() {
