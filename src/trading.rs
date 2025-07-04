@@ -158,7 +158,7 @@ pub async fn check_and_trade(
         }
     }
     
-    let mut profit = 0;
+    let mut profit: Option<Decimal> = None;
     let trading_session_id = generate_session_id();
     
     // Get current balances before trade
@@ -219,7 +219,7 @@ pub async fn check_and_trade(
                 let effective_price = if sol_gained > 0.0 { usdc_spent / sol_gained } else { 0.0 };
 
                 let profit_loss = if let Some(last_price) = state.last_sol_price {
-                    let profit_per_sol = effective_price - last_price;
+                    let profit_per_sol = Decimal::from_f64_retain(effective_price).unwrap_or(dec!(0)) - last_price;;
                     let total_profit = profit_per_sol * Decimal::from_f64_retain(sol_gained).unwrap_or(dec!(0));
                     state.total_profit_usdc += total_profit;
                     
