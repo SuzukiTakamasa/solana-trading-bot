@@ -139,7 +139,7 @@ impl JupiterClient {
         let max_retries = 3;
         let mut retry_count = 0;
         
-        loop {
+        let response = loop {
             match self.client
                 .get(&url)
                 .query(&[
@@ -152,10 +152,7 @@ impl JupiterClient {
                 .send()
                 .await
             {
-                Ok(response) => {
-                    let response = response;
-                    break Ok(response);
-                }
+                Ok(response) => break response,
                 Err(e) => {
                     retry_count += 1;
                     error!("Quote request attempt {} failed: {}", retry_count, e);
@@ -173,7 +170,7 @@ impl JupiterClient {
                     tokio::time::sleep(delay).await;
                 }
             }
-        }?;
+        };
         
         let status = response.status();
         if !status.is_success() {
