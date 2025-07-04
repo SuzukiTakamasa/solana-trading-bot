@@ -108,7 +108,7 @@ pub struct JupiterClient {
 impl JupiterClient {
     pub fn new(api_url: &str) -> Self {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(120))
             .user_agent("solana-trading-bot/1.0")
             .build()
             .expect("Failed to build HTTP client");
