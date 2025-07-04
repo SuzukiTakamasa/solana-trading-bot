@@ -158,7 +158,7 @@ pub async fn check_and_trade(
         }
     }
     
-    let mut profit = None;
+    let mut profit: Option<Decimal> = None;
     let trading_session_id = generate_session_id();
     
     // Get current balances before trade
@@ -217,6 +217,22 @@ pub async fn check_and_trade(
                 let sol_gained = sol_balance_after - sol_balance_before;
                 let usdc_spent = usdc_balance_before - usdc_balance_after;
                 let effective_price = if sol_gained > 0.0 { usdc_spent / sol_gained } else { 0.0 };
+
+                let profit_loss = if let Some(last_price) = state.last_sol_price {
+                    let profit_per_sol = Decimal::from_f64_retain(effective_price).unwrap_or(dec!(0)) - last_price;;
+                    let total_profit = profit_per_sol * Decimal::from_f64_retain(sol_gained).unwrap_or(dec!(0));
+                    state.total_profit_usdc += total_profit;
+                    
+                    match total_profit.cmp(&dec!(0)) {
+                        std::cmp::Ordering::Greater => state.winning_trades += 1,
+                        std::cmp::Ordering::Less => state.losing_trades += 1,
+                        std::cmp::Ordering::Equal => {}
+                    }
+                    
+                    Some(total_profit)
+                } else {
+                    None
+                };
                 
                 // Store trading session
                 if let Some(db) = &state.firestore {
@@ -233,7 +249,7 @@ pub async fn check_and_trade(
                         price_at_trade: sol_price_in_usdc,
                         slippage: Some(Decimal::from_f64_retain(effective_price).unwrap_or(dec!(0)) - sol_price_in_usdc),
                         gas_fee: None,
-                        profit_loss: None,
+                        profit_loss,
                         cumulative_profit: Some(state.total_profit_usdc),
                     };
                     
