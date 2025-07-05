@@ -413,9 +413,9 @@ fn should_make_trade(
 ) -> bool {
     match position {
         Position::USDC => {
-            // Buy SOL if the price has increased by 1% or more compared to the price from the last trade
+            // Buy SOL if the price has decreased by 1% or more compared to the price from the last trade
             state.last_trade_price
-                .map(|last_price| sol_price >= last_price * dec!(1.01))
+                .map(|last_price| sol_price <= last_price * dec!(0.99))
                 .unwrap_or(false)
         }
         Position::SOL => {
@@ -436,9 +436,9 @@ fn should_make_trade_simple(
 ) -> bool {
     match position {
         Position::USDC => {
-            // Buy SOL if the price has increased by 1% or more from last trade
+            // Buy SOL if the price has decreased by 1% or more from last trade
             state.last_trade_price
-                .map(|last| sol_price >= last * dec!(1.01))
+                .map(|last| sol_price <= last * dec!(0.99))
                 .unwrap_or(false)
         }
         Position::SOL => {
