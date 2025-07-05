@@ -35,6 +35,7 @@ pub struct TradingState {
     pub position: Position,
     pub last_sol_price: Option<Decimal>,
     pub last_usdc_price: Option<Decimal>,
+    pub last_trade_price: Option<Decimal>,
     pub total_profit_usdc: Decimal,
     pub total_trades: i64,
     pub winning_trades: i64,
@@ -48,6 +49,7 @@ impl TradingState {
             position: Position::USDC,
             last_sol_price: None,
             last_usdc_price: None,
+            last_trade_price: None,
             total_profit_usdc: dec!(0),
             total_trades: 0,
             winning_trades: 0,
@@ -70,7 +72,8 @@ impl TradingState {
                     "USDC" => Position::USDC,
                     _ => Position::USDC, // Default to USDC if unknown
                 };
-                info!("Loaded position from latest trading session: {}", self.position);
+                self.last_trade_price = Some(latest_session.price_at_trade);
+                info!("Loaded position from latest trading session: {}, price: {}", self.position, latest_session.price_at_trade);
             }
             
             if let Ok(Some(latest_profit)) = db.get_latest_profit_tracking().await {
@@ -219,7 +222,7 @@ pub async fn check_and_trade(
                 let effective_price = if sol_gained > 0.0 { usdc_spent / sol_gained } else { 0.0 };
 
                 let profit_loss = if let Some(last_price) = state.last_sol_price {
-                    let profit_per_sol = Decimal::from_f64_retain(effective_price).unwrap_or(dec!(0)) - last_price;;
+                    let profit_per_sol = Decimal::from_f64_retain(effective_price).unwrap_or(dec!(0)) - last_price;
                     let total_profit = profit_per_sol * Decimal::from_f64_retain(sol_gained).unwrap_or(dec!(0));
                     state.total_profit_usdc += total_profit;
                     
@@ -233,6 +236,8 @@ pub async fn check_and_trade(
                 } else {
                     None
                 };
+
+                profit = profit_loss;
                 
                 // Store trading session
                 if let Some(db) = &state.firestore {
@@ -257,6 +262,10 @@ pub async fn check_and_trade(
                         error!("Failed to store trading session: {}", e);
                     }
                 }
+                
+                // Update last trade price and position
+                state.total_profit_usdc = profit_loss.unwrap_or(dec!(0));
+                state.position = Position::SOL;
             }
         }
         Position::SOL => {
@@ -353,6 +362,10 @@ pub async fn check_and_trade(
                         }
                     }
                 }
+                
+                // Update last trade price and position
+                state.total_profit_usdc = profit_loss.unwrap_or(dec!(0));
+                state.position = Position::USDC;
             }
         }
     }
@@ -393,43 +406,23 @@ async fn get_current_prices(
 // Enhanced trading logic with trend analysis
 fn should_make_trade(
     position: &Position,
-    trend: &crate::firestore::PriceTrend,
+    _trend: &crate::firestore::PriceTrend,
     sol_price: Decimal,
     _usdc_price: Decimal,
     state: &TradingState,
 ) -> bool {
     match position {
         Position::USDC => {
-            // Buy SOL if:
-            // 1. Price has been trending up in the last hour
-            // 2. Price is lower than the 24h average (buy the dip)
-            // 3. Volatility is reasonable
-            
-            let trending_up = trend.trend_1h.as_ref().map(|t| t == "up").unwrap_or(false);
-            /*let below_24h = trend.price_24h_ago
-                .map(|p| sol_price < p * dec!(0.99)) // 1% below 24h price
-                .unwrap_or(false);*/
-            let low_volatility = trend.volatility_1h
-                .map(|v| v < dec!(5.0)) // Less than 5% volatility
-                .unwrap_or(true);
-            
-            trending_up && low_volatility
+            // Buy SOL if the price has increased by 1% or more compared to the price from the last trade
+            state.last_trade_price
+                .map(|last_price| sol_price >= last_price * dec!(1.01))
+                .unwrap_or(false)
         }
         Position::SOL => {
-            // Sell SOL if:
-            // 1. We have a profit of at least 1%
-            // 2. Price is trending down
-            // 3. Price is above 24h average (sell high)
-            
-            let has_profit = state.last_sol_price
-                .map(|last| sol_price > last * dec!(1.01)) // 1% profit
-                .unwrap_or(false);
-            let trending_down = trend.trend_1h.as_ref().map(|t| t == "down").unwrap_or(false);
-            /*let above_24h = trend.price_24h_ago
-                .map(|p| sol_price > p * dec!(1.01)) // 1% above 24h price
-                .unwrap_or(false);*/
-            
-            has_profit && trending_down
+            // Sell SOL if the price has increased by 1% or more compared to the price from the last trade
+            state.last_trade_price
+                .map(|last_price| sol_price >= last_price * dec!(1.01))
+                .unwrap_or(false)
         }
     }
 }
@@ -443,15 +436,15 @@ fn should_make_trade_simple(
 ) -> bool {
     match position {
         Position::USDC => {
-            // Buy if price dropped more than 1% from last trade
-            state.last_sol_price
-                .map(|last| sol_price < last * dec!(0.99))
+            // Buy SOL if the price has increased by 1% or more from last trade
+            state.last_trade_price
+                .map(|last| sol_price >= last * dec!(1.01))
                 .unwrap_or(false)
         }
         Position::SOL => {
-            // Sell if we have more than 1% profit
-            state.last_sol_price
-                .map(|last| sol_price > last * dec!(1.01))
+            // Sell SOL if the price has increased by 1% or more from last trade
+            state.last_trade_price
+                .map(|last| sol_price >= last * dec!(1.01))
                 .unwrap_or(false)
         }
     }
