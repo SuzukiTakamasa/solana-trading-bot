@@ -127,13 +127,7 @@ async fn execute_single_trade() -> Result<()> {
             line_client.send_message(&message).await?;
         }
         Ok(None) => {
-            let message = format!(
-                "🤔 Trade skipped.\n\
-                Time: {}",
-                Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
-            );
             info!("No trading opportunity found");
-            line_client.send_message(&message).await?;
         }
         Err(e) => {
             let message = format!(
