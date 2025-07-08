@@ -2,6 +2,7 @@ mod config;
 mod firestore;
 mod jupiter;
 mod line_bot;
+mod service;
 mod trading;
 mod wallet;
 

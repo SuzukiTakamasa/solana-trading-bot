@@ -6,6 +6,7 @@ use solana_sdk::{
 };
 use solana_client::rpc_client::RpcClient;
 use tracing::{info, error};
+use crate::service::retry_as_exponential_back_off;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QuoteRequest {
@@ -136,41 +137,33 @@ impl JupiterClient {
             amount, input_mint, output_mint, slippage_bps
         );
         
-        let max_retries = 3;
-        let mut retry_count = 0;
+        let client = self.client.clone();
+        let input_mint = input_mint.to_string();
+        let output_mint = output_mint.to_string();
+        let amount_str = amount.to_string();
+        let slippage_str = slippage_bps.to_string();
         
-        let response = loop {
-            match self.client
-                .get(&url)
-                .query(&[
-                    ("inputMint", input_mint),
-                    ("outputMint", output_mint),
-                    ("amount", &amount.to_string()),
-                    ("slippageBps", &slippage_bps.to_string()),
-                ])
-                .header("Accept", "application/json")
-                .send()
-                .await
-            {
-                Ok(response) => break response,
-                Err(e) => {
-                    retry_count += 1;
-                    error!("Quote request attempt {} failed: {}", retry_count, e);
-                    
-                    if retry_count >= max_retries {
-                        error!("Failed to send quote request to {} after {} attempts: {}", url, max_retries, e);
-                        return Err(anyhow::anyhow!(
-                            "Failed to send quote request after {} attempts: {}. Please check your internet connection and Jupiter API URL.", 
-                            max_retries, e
-                        ));
-                    }
-                    
-                    let delay = std::time::Duration::from_millis(500 * retry_count as u64);
-                    info!("Retrying quote request in {:?}...", delay);
-                    tokio::time::sleep(delay).await;
-                }
-            }
-        };
+        let response = retry_as_exponential_back_off(
+            || async {
+                client
+                    .get(&url)
+                    .query(&[
+                        ("inputMint", &input_mint),
+                        ("outputMint", &output_mint),
+                        ("amount", &amount_str),
+                        ("slippageBps", &slippage_str),
+                    ])
+                    .header("Accept", "application/json")
+                    .send()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to send quote request: {}", e))
+            },
+            "Quote request",
+            3,
+            500,
+            None,
+        )
+        .await?;
         
         let status = response.status();
         if !status.is_success() {
@@ -221,35 +214,23 @@ impl JupiterClient {
             quote_response: quote,
         };
         
-        let max_retries = 3;
-        let mut retry_count = 0;
+        let client = self.client.clone();
         
-        let response = loop {
-            match self.client
-                .post(&url)
-                .json(&swap_request)
-                .send()
-                .await
-            {
-                Ok(response) => break response,
-                Err(e) => {
-                    retry_count += 1;
-                    error!("Swap request attempt {} failed: {}", retry_count, e);
-                    
-                    if retry_count >= max_retries {
-                        error!("Failed to send swap request to {} after {} attempts: {}", url, max_retries, e);
-                        return Err(anyhow::anyhow!(
-                            "Failed to send swap request after {} attempts: {}. Please check your internet connection and Jupiter API URL.", 
-                            max_retries, e
-                        ));
-                    }
-                    
-                    let delay = std::time::Duration::from_millis(500 * retry_count as u64);
-                    info!("Retrying swap request in {:?}...", delay);
-                    tokio::time::sleep(delay).await;
-                }
-            }
-        };
+        let response = retry_as_exponential_back_off(
+            || async {
+                client
+                    .post(&url)
+                    .json(&swap_request)
+                    .send()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to send swap request: {}", e))
+            },
+            "Swap request",
+            3,
+            500,
+            None,
+        )
+        .await?;
         
         let status = response.status();
         if !status.is_success() {
@@ -335,9 +316,18 @@ impl JupiterClient {
         wallet.sign_transaction(&mut transaction)?;
         
         // Send and confirm transaction
-        let signature = rpc_client
-            .send_and_confirm_transaction(&transaction)
-            .context("Failed to send and confirm transaction")?;
+        let signature = retry_as_exponential_back_off(
+            || async {
+                rpc_client
+                    .send_and_confirm_transaction(&transaction)
+                    .map_err(|e| anyhow::anyhow!("Failed to send and confirm transaction: {}", e))
+            },
+            "Send and confirm transaction",
+            3,
+            500,
+            Some(std::time::Duration::from_secs(60)),
+        )
+        .await?;
         
         info!("Swap executed successfully: {}", signature);
         
