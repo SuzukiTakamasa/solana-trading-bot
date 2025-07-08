@@ -264,7 +264,7 @@ pub async fn check_and_trade(
                 }
                 
                 // Update last trade price and position
-                state.total_profit_usdc = profit_loss.unwrap_or(dec!(0));
+                state.last_trade_price = Some(sol_price_in_usdc);
                 state.position = Position::SOL;
             }
         }
@@ -364,7 +364,7 @@ pub async fn check_and_trade(
                 }
                 
                 // Update last trade price and position
-                state.total_profit_usdc = profit_loss.unwrap_or(dec!(0));
+                state.last_trade_price = Some(sol_price_in_usdc);
                 state.position = Position::USDC;
             }
         }
