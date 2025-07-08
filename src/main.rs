@@ -120,8 +120,8 @@ async fn execute_single_trade() -> Result<()> {
                 Total: {} USDC\n\
                 Time: {}",
                 state.position,
-                profit * Decimal::from(1_000_000_000u64),
-                state.total_profit_usdc * Decimal::from(1_000_000_000u64),
+                profit,
+                state.total_profit_usdc,
                 Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
             );
             info!("{}", message);
