@@ -222,7 +222,7 @@ pub async fn check_and_trade(
                 let effective_price = if sol_gained > 0.0 { usdc_spent / sol_gained } else { 0.0 };
 
                 let profit_loss = if let Some(last_price) = state.last_sol_price {
-                    let profit_per_sol = Decimal::from_f64_retain(effective_price).unwrap_or(dec!(0)) - last_price;
+                    let profit_per_sol = sol_price_in_usdc - last_price;
                     let total_profit = profit_per_sol * Decimal::from_f64_retain(sol_gained).unwrap_or(dec!(0));
                     state.total_profit_usdc += total_profit;
                     
@@ -297,9 +297,9 @@ pub async fn check_and_trade(
                 let effective_price = if sol_spent > 0.0 { usdc_gained / sol_spent } else { 0.0 };
                 
                 // Calculate profit if we have a previous price
-                let profit_loss = if let Some(last_price) = state.last_sol_price {
-                    let profit_per_sol = sol_price_in_usdc - last_price;
-                    let total_profit = profit_per_sol * Decimal::from_f64_retain(sol_spent).unwrap_or(dec!(0));
+                let profit_loss = if let Some(last_price) = state.last_usdc_price {
+                    let profit_per_usdc = usdc_price_in_sol - last_price;
+                    let total_profit = profit_per_usdc * Decimal::from_f64_retain(usdc_gained).unwrap_or(dec!(0));
                     state.total_profit_usdc += total_profit;
                     
 

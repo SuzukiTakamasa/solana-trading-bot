@@ -8,7 +8,6 @@ mod wallet;
 
 use anyhow::Result;
 use axum::{extract::Query, response::IntoResponse, routing::get, Json, Router};
-use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -115,10 +114,10 @@ async fn execute_single_trade() -> Result<()> {
         Ok(Some(profit)) => {
             let message = format!(
                 "😎 Trade executed!\n\
-                Position: {}\n\
-                Profit: {} USDC\n\
-                Total: {} USDC\n\
-                Time: {}",
+                Position: {0}\n\
+                Profit: {1:.4} {0}\n\
+                Total: {2:.4} {0}\n\
+                Time: {3}",
                 state.position,
                 profit,
                 state.total_profit_usdc,
