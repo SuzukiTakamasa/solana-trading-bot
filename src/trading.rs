@@ -181,12 +181,11 @@ pub async fn check_and_trade(
             }
             Err(e) => {
                 error!("Failed to get price trend: {}", e);
-                // Fallback to simple logic
-                should_make_trade_simple(&state.position, sol_price_in_usdc, usdc_price_in_sol, state)
+                return Ok(None)
             }
         }
     } else {
-        should_make_trade_simple(&state.position, sol_price_in_usdc, usdc_price_in_sol, state)
+        return Ok(None)
     };
     
     if !should_trade {
@@ -422,29 +421,6 @@ fn should_make_trade(
             // Sell SOL if the price has increased by 1% or more compared to the price from the last trade
             state.last_trade_price
                 .map(|last_price| sol_price >= last_price * dec!(1.01))
-                .unwrap_or(false)
-        }
-    }
-}
-
-// Simple trading logic fallback
-fn should_make_trade_simple(
-    position: &Position,
-    sol_price: Decimal,
-    _usdc_price: Decimal,
-    state: &TradingState,
-) -> bool {
-    match position {
-        Position::USDC => {
-            // Buy SOL if the price has decreased by 1% or more from last trade
-            state.last_trade_price
-                .map(|last| sol_price <= last * dec!(0.99))
-                .unwrap_or(false)
-        }
-        Position::SOL => {
-            // Sell SOL if the price has increased by 1% or more from last trade
-            state.last_trade_price
-                .map(|last| sol_price >= last * dec!(1.01))
                 .unwrap_or(false)
         }
     }
