@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{FixedOffset, TimeZone};
+use chrono::{FixedOffset, TimeZone, Duration};
 use chrono_tz::Asia::Tokyo;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
@@ -36,6 +36,7 @@ pub struct TradingState {
     pub last_sol_price: Option<Decimal>,
     pub last_usdc_price: Option<Decimal>,
     pub last_trade_price: Option<Decimal>,
+    pub last_trade_timestamp: Option<chrono::DateTime<FixedOffset>>,
     pub total_profit_usdc: Decimal,
     pub total_trades: i64,
     pub winning_trades: i64,
@@ -50,6 +51,7 @@ impl TradingState {
             last_sol_price: None,
             last_usdc_price: None,
             last_trade_price: None,
+            last_trade_timestamp: None,
             total_profit_usdc: dec!(0),
             total_trades: 0,
             winning_trades: 0,
@@ -73,6 +75,7 @@ impl TradingState {
                     _ => Position::USDC, // Default to USDC if unknown
                 };
                 self.last_trade_price = Some(latest_session.price_at_trade);
+                self.last_trade_timestamp = Some(latest_session.timestamp);
                 info!("Loaded position from latest trading session: {}, price: {}", self.position, latest_session.price_at_trade);
             }
             
@@ -405,23 +408,42 @@ async fn get_current_prices(
 // Enhanced trading logic with trend analysis
 fn should_make_trade(
     position: &Position,
-    _trend: &crate::firestore::PriceTrend,
+    trend: &crate::firestore::PriceTrend,
     sol_price: Decimal,
     _usdc_price: Decimal,
     state: &TradingState,
 ) -> bool {
-    match position {
-        Position::USDC => {
-            // Buy SOL if the price has decreased by 1% or more compared to the price from the last trade
-            state.last_trade_price
-                .map(|last_price| sol_price <= last_price * dec!(0.99))
-                .unwrap_or(false)
+
+    let now_at_jst = Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap());
+    let one_week = Duration::weeks(1);
+
+    if let Some(last_trade_time) = state.last_trade_timestamp {
+        if now_at_jst - last_trade_time > one_week {
+            let change_from_1h_ago: Decimal = match &trend.trend_1h {
+                Some(s) => Decimal::from_str(s).unwrap_or(dec!(0)),
+                None => dec!(0),
+            };
+            match position {
+                Position::USDC => change_from_1h_ago <= dec!(-0.01),
+                Position::SOL => change_from_1h_ago >= dec!(0.01),
+            }
+        } else {
+            false
         }
-        Position::SOL => {
-            // Sell SOL if the price has increased by 1% or more compared to the price from the last trade
-            state.last_trade_price
-                .map(|last_price| sol_price >= last_price * dec!(1.01))
-                .unwrap_or(false)
+    } else {
+        match position {
+            Position::USDC => {
+                // Buy SOL if the price has decreased by 1% or more compared to the price from the last trade
+                state.last_trade_price
+                    .map(|last_price| sol_price <= last_price * dec!(0.99))
+                    .unwrap_or(false)
+            }
+            Position::SOL => {
+                // Sell SOL if the price has increased by 1% or more compared to the price from the last trade
+                state.last_trade_price
+                    .map(|last_price| sol_price >= last_price * dec!(1.01))
+                    .unwrap_or(false)
+            }
         }
     }
 }
