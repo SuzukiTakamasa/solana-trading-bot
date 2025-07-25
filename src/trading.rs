@@ -419,31 +419,29 @@ fn should_make_trade(
 
     if let Some(last_trade_time) = state.last_trade_timestamp {
         if now_at_jst - last_trade_time > one_week {
+            info!("More than a week since last trade, considering new trade");
             let change_from_1h_ago: Decimal = match &trend.trend_1h {
                 Some(s) => Decimal::from_str(s).unwrap_or(dec!(0)),
                 None => dec!(0),
             };
-            match position {
+            return match position {
                 Position::USDC => change_from_1h_ago <= dec!(-0.01),
                 Position::SOL => change_from_1h_ago >= dec!(0.01),
-            }
-        } else {
-            false
+            };
         }
-    } else {
-        match position {
-            Position::USDC => {
-                // Buy SOL if the price has decreased by 1% or more compared to the price from the last trade
-                state.last_trade_price
-                    .map(|last_price| sol_price <= last_price * dec!(0.99))
-                    .unwrap_or(false)
-            }
-            Position::SOL => {
-                // Sell SOL if the price has increased by 1% or more compared to the price from the last trade
-                state.last_trade_price
-                    .map(|last_price| sol_price >= last_price * dec!(1.01))
-                    .unwrap_or(false)
-            }
+    }
+    match position {
+        Position::USDC => {
+            // Buy SOL if the price has decreased by 1% or more compared to the price from the last trade
+            state.last_trade_price
+                .map(|last_price| sol_price <= last_price * dec!(0.99))
+                .unwrap_or(false)
+        }
+        Position::SOL => {
+            // Sell SOL if the price has increased by 1% or more compared to the price from the last trade
+            state.last_trade_price
+                .map(|last_price| sol_price >= last_price * dec!(1.01))
+                .unwrap_or(false)
         }
     }
 }
