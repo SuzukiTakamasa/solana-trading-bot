@@ -420,13 +420,13 @@ fn should_make_trade(
     if let Some(last_trade_time) = state.last_trade_timestamp {
         if now_at_jst - last_trade_time > one_week {
             info!("More than a week since last trade, considering new trade");
-            let change_from_1h_ago: Decimal = match &trend.trend_1h {
-                Some(s) => Decimal::from_str(s).unwrap_or(dec!(0)),
+            let price_1h_ago: Decimal = match &trend.price_1h_ago {
+                Some(p) => *p,
                 None => dec!(0),
             };
             return match position {
-                Position::USDC => change_from_1h_ago <= dec!(-0.01),
-                Position::SOL => change_from_1h_ago >= dec!(0.01),
+                Position::USDC => sol_price <= price_1h_ago * dec!(0.99), // Buy SOL if price has decreased by 1% or more
+                Position::SOL => sol_price >= price_1h_ago * dec!(1.01), // Sell SOL if price has increased by 1% or more
             };
         }
     }
