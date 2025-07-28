@@ -15,6 +15,8 @@ use tracing::{info, error};
 use chrono::{FixedOffset, TimeZone};
 use chrono_tz::Asia::Tokyo;
 
+use trading::Position;
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -112,14 +114,19 @@ async fn execute_single_trade() -> Result<()> {
     // Execute the trade
     match trading::check_and_trade(&wallet, &config, &mut state).await {
         Ok(Some(profit)) => {
+            let profit_unit = match state.position {
+                Position::SOL => "USDC",
+                Position::USDC => "SOL",
+            };
             let message = format!(
                 "😎 Trade executed!\n\
                 Position: {0}\n\
-                Profit: {1:.4} {0}\n\
-                Total: {2:.4} {0}\n\
-                Time: {3}",
+                Profit: {1:.4} {2}\n\
+                Total: {3:.4} USDC\n\
+                Time: {4}",
                 state.position,
                 profit,
+                profit_unit,
                 state.total_profit_usdc,
                 Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
             );
