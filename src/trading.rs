@@ -425,8 +425,8 @@ fn should_make_trade(
                 None => dec!(0),
             };
             return match position {
-                Position::USDC => sol_price <= price_1h_ago,
-                Position::SOL => sol_price >= price_1h_ago
+                Position::USDC => sol_price < price_1h_ago,
+                Position::SOL => sol_price > price_1h_ago
             };
         }
     }
@@ -434,13 +434,13 @@ fn should_make_trade(
         Position::USDC => {
             // Buy SOL if the price has decreased by 1% or more compared to the price from the last trade
             state.last_trade_price
-                .map(|last_price| sol_price <= last_price)
+                .map(|last_price| sol_price < last_price)
                 .unwrap_or(false)
         }
         Position::SOL => {
             // Sell SOL if the price has increased by 1% or more compared to the price from the last trade
             state.last_trade_price
-                .map(|last_price| sol_price >= last_price)
+                .map(|last_price| sol_price > last_price)
                 .unwrap_or(false)
         }
     }
