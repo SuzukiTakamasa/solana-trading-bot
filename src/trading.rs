@@ -424,12 +424,14 @@ fn should_make_trade(
                 Some(p) => *p,
                 None => dec!(0),
             };
+            info!("price_1h_ago is {}, sol_price is {}", price_1h_ago, sol_price);
             return match position {
                 Position::USDC => sol_price < price_1h_ago,
                 Position::SOL => sol_price > price_1h_ago
             };
         }
     }
+    info!("last_trade_price is {}, sol_price is {}", state.last_trade_price.unwrap_or(dec!(0)), sol_price);
     match position {
         Position::USDC => {
             // Buy SOL if the price has decreased by 1% or more compared to the price from the last trade
