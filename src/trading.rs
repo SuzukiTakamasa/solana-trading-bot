@@ -223,18 +223,19 @@ pub async fn check_and_trade(
                 let usdc_spent = usdc_balance_before - usdc_balance_after;
                 let effective_price = if sol_gained > 0.0 { usdc_spent / sol_gained } else { 0.0 };
 
-                let profit_loss = if let Some(last_price) = state.last_sol_price {
-                    let profit_per_sol = sol_price_in_usdc - last_price;
-                    let total_profit = profit_per_sol * Decimal::from_f64_retain(sol_gained).unwrap_or(dec!(0));
-                    state.total_profit_usdc += total_profit;
+                let profit_loss = if let Some(last_trade_price) = state.last_trade_price {
+                    let price_difference = sol_price_in_usdc - last_trade_price;
+                    let profit = price_difference * Decimal::from_f64_retain(sol_gained).unwrap_or(dec!(0));
+
+                    state.total_profit_usdc += profit;
                     
-                    match total_profit.cmp(&dec!(0)) {
+                    match profit.cmp(&dec!(0)) {
                         std::cmp::Ordering::Greater => state.winning_trades += 1,
                         std::cmp::Ordering::Less => state.losing_trades += 1,
                         std::cmp::Ordering::Equal => {}
                     }
                     
-                    Some(total_profit)
+                    Some(profit)
                 } else {
                     None
                 };
@@ -300,18 +301,18 @@ pub async fn check_and_trade(
                 
                 // Calculate profit if we have a previous price
                 let profit_loss = if let Some(last_price) = state.last_usdc_price {
-                    let profit_per_usdc = usdc_price_in_sol - last_price;
-                    let total_profit = profit_per_usdc * Decimal::from_f64_retain(usdc_gained).unwrap_or(dec!(0));
-                    state.total_profit_usdc += total_profit;
+                    let price_difference = sol_price_in_usdc - last_price;
+                    let profit = price_difference * Decimal::from_f64_retain(sol_spent).unwrap_or(dec!(0));
+                    state.total_profit_usdc += profit;
                     
 
-                    match total_profit.cmp(&dec!(0)) {
+                    match profit.cmp(&dec!(0)) {
                         std::cmp::Ordering::Greater => state.winning_trades += 1,
                         std::cmp::Ordering::Less => state.losing_trades += 1,
                         std::cmp::Ordering::Equal => {}
                     }
                     
-                    Some(total_profit)
+                    Some(profit)
                 } else {
                     None
                 };
