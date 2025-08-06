@@ -373,7 +373,7 @@ pub async fn check_and_trade(
         }
     }
     
-    Ok(profit * Decimal::from_f64_retain(1_000_000_000.0).unwrap_or(dec!(0)))
+    Ok(profit.map(|p| p * Decimal::from_f64_retain(1_000_000_000.0).unwrap_or(dec!(0))))
 }
 
 async fn get_current_prices(
