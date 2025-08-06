@@ -159,7 +159,7 @@ impl JupiterClient {
                     .map_err(|e| anyhow::anyhow!("Failed to send quote request: {}", e))
             },
             "Quote request",
-            3,
+            5,
             500,
             None,
         )
@@ -226,7 +226,7 @@ impl JupiterClient {
                     .map_err(|e| anyhow::anyhow!("Failed to send swap request: {}", e))
             },
             "Swap request",
-            3,
+            5,
             500,
             None,
         )
@@ -323,7 +323,7 @@ impl JupiterClient {
                     .map_err(|e| anyhow::anyhow!("Failed to send and confirm transaction: {}", e))
             },
             "Send and confirm transaction",
-            3,
+            5,
             500,
             Some(std::time::Duration::from_secs(60)),
         )
