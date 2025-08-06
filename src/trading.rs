@@ -225,7 +225,7 @@ pub async fn check_and_trade(
 
                 let profit_loss = if let Some(last_trade_price) = state.last_trade_price {
                     let price_difference = sol_price_in_usdc - last_trade_price;
-                    let profit = price_difference * Decimal::from_f64_retain(sol_gained).unwrap_or(dec!(0));
+                    let profit = price_difference * (Decimal::from_f64_retain(sol_gained).unwrap_or(dec!(0)) * dec!(1_000_000_000));
 
                     state.total_profit_usdc += profit;
                     
@@ -302,7 +302,7 @@ pub async fn check_and_trade(
                 // Calculate profit if we have a previous price
                 let profit_loss = if let Some(last_price) = state.last_usdc_price {
                     let price_difference = sol_price_in_usdc - last_price;
-                    let profit = price_difference * Decimal::from_f64_retain(sol_spent).unwrap_or(dec!(0));
+                    let profit = price_difference * (Decimal::from_f64_retain(sol_spent).unwrap_or(dec!(0)) * dec!(1_000_000_000));
                     state.total_profit_usdc += profit;
                     
 
@@ -373,7 +373,7 @@ pub async fn check_and_trade(
         }
     }
     
-    Ok(profit.map(|p| p * Decimal::from_f64_retain(1_000_000_000.0).unwrap_or(dec!(0))))
+    Ok(profit)
 }
 
 async fn get_current_prices(
