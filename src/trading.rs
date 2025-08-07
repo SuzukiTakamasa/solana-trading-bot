@@ -439,7 +439,9 @@ fn should_make_trade(
             let sol_price_down = state.last_trade_price
                 .map(|last_price| sol_price < last_price)
                 .unwrap_or(false);
-            debug!("volatility: {}%", (sol_price - trend.price_1h_ago).abs() / trend.price_1h_ago * dec!(100));
+            if let Some(price_1h_ago) = trend.price_1h_ago {
+                debug!("volatility: {}%", (sol_price - price_1h_ago).abs() / price_1h_ago * dec!(100));
+            }
             //let trend_1h_within_5_percent_volatility = trend.price_1h_ago
             //    .map(|price_1h_ago| (sol_price - price_1h_ago).abs() / price_1h_ago < dec!(0.05))
             //    .unwrap_or(false);
@@ -450,7 +452,9 @@ fn should_make_trade(
             let sol_price_up = state.last_trade_price
                 .map(|last_price| sol_price > last_price)
                 .unwrap_or(false);
-            debug!("volatility: {}%", (sol_price - trend.price_1h_ago).abs() / trend.price_1h_ago * dec!(100));
+            if let Some(price_1h_ago) = trend.price_1h_ago {
+                debug!("volatility: {}%", (sol_price - price_1h_ago).abs() / price_1h_ago * dec!(100));
+            };
             //let trend_1h_within_5_percent_volatility = trend.price_1h_ago
             //    .map(|price_1h_ago| (sol_price - price_1h_ago).abs() / price_1h_ago < dec!(0.05))
             //    .unwrap_or(false);
