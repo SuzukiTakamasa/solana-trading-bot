@@ -7,7 +7,7 @@ use solana_client::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
 use std::sync::Arc;
-use tracing::{error, info, debug};
+use tracing::{error, info};
 
 use crate::{
     config::Config,
@@ -416,11 +416,11 @@ fn should_make_trade(
 ) -> bool {
 
     let now_at_jst = Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap());
-    let one_week = Duration::weeks(1);
+    let duration_24h = Duration::days(1);
 
     if let Some(last_trade_time) = state.last_trade_timestamp {
-        if now_at_jst - last_trade_time > one_week {
-            info!("More than a week since last trade, considering new trade");
+        if now_at_jst - last_trade_time > duration_24h {
+            info!("More than 24 hours since last trade, considering new trade");
             let price_1h_ago: Decimal = match &trend.price_1h_ago {
                 Some(p) => *p,
                 None => dec!(0),
@@ -436,29 +436,15 @@ fn should_make_trade(
     match position {
         Position::USDC => {
             // Buy SOL if the price has decreased by 1% or more compared to the price from the last trade
-            let sol_price_down = state.last_trade_price
+            state.last_trade_price
                 .map(|last_price| sol_price < last_price)
-                .unwrap_or(false);
-            if let Some(price_1h_ago) = trend.price_1h_ago {
-                debug!("volatility: {}%", (sol_price - price_1h_ago).abs() / price_1h_ago * dec!(100));
-            }
-            //let trend_1h_within_5_percent_volatility = trend.price_1h_ago
-            //    .map(|price_1h_ago| (sol_price - price_1h_ago).abs() / price_1h_ago < dec!(0.05))
-            //    .unwrap_or(false);
-            sol_price_down //&& trend_1h_within_5_percent_volatility
+                .unwrap_or(false)
         }
         Position::SOL => {
             // Sell SOL if the price has increased by 1% or more compared to the price from the last trade
-            let sol_price_up = state.last_trade_price
+            state.last_trade_price
                 .map(|last_price| sol_price > last_price)
-                .unwrap_or(false);
-            if let Some(price_1h_ago) = trend.price_1h_ago {
-                debug!("volatility: {}%", (sol_price - price_1h_ago).abs() / price_1h_ago * dec!(100));
-            };
-            //let trend_1h_within_5_percent_volatility = trend.price_1h_ago
-            //    .map(|price_1h_ago| (sol_price - price_1h_ago).abs() / price_1h_ago < dec!(0.05))
-            //    .unwrap_or(false);
-            sol_price_up //&& trend_1h_within_5_percent_volatility
+                .unwrap_or(false)
         }
     }
 }
