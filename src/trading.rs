@@ -7,7 +7,7 @@ use solana_client::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
 use std::str::FromStr;
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{error, info, debug};
 
 use crate::{
     config::Config,
