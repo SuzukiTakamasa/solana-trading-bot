@@ -439,20 +439,22 @@ fn should_make_trade(
             let sol_price_down = state.last_trade_price
                 .map(|last_price| sol_price < last_price)
                 .unwrap_or(false);
-            let trend_1h_within_5_percent_volatility = trend.price_1h_ago
-                .map(|price_1h_ago| (sol_price - price_1h_ago).abs() / price_1h_ago < dec!(0.05))
-                .unwrap_or(false);
-            sol_price_down && trend_1h_within_5_percent_volatility
+            debug!("volatility: {}%", (sol_price - trend.price_1h_ago).abs() / trend.price_1h_ago * dec!(100));
+            //let trend_1h_within_5_percent_volatility = trend.price_1h_ago
+            //    .map(|price_1h_ago| (sol_price - price_1h_ago).abs() / price_1h_ago < dec!(0.05))
+            //    .unwrap_or(false);
+            sol_price_down //&& trend_1h_within_5_percent_volatility
         }
         Position::SOL => {
             // Sell SOL if the price has increased by 1% or more compared to the price from the last trade
             let sol_price_up = state.last_trade_price
                 .map(|last_price| sol_price > last_price)
                 .unwrap_or(false);
-            let trend_1h_within_5_percent_volatility = trend.price_1h_ago
-                .map(|price_1h_ago| (sol_price - price_1h_ago).abs() / price_1h_ago < dec!(0.05))
-                .unwrap_or(false);
-            sol_price_up && trend_1h_within_5_percent_volatility
+            debug!("volatility: {}%", (sol_price - trend.price_1h_ago).abs() / trend.price_1h_ago * dec!(100));
+            //let trend_1h_within_5_percent_volatility = trend.price_1h_ago
+            //    .map(|price_1h_ago| (sol_price - price_1h_ago).abs() / price_1h_ago < dec!(0.05))
+            //    .unwrap_or(false);
+            sol_price_up //&& trend_1h_within_5_percent_volatility
         }
     }
 }
