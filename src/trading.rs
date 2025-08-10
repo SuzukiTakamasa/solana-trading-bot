@@ -421,8 +421,8 @@ fn should_make_trade(
     if let Some(last_trade_time) = state.last_trade_timestamp {
         if now_at_jst - last_trade_time > duration_24h {
             info!("More than 24 hours since last trade, considering new trade");
-            let price_1h_ago: Decimal = match &trend.price_1h_ago {
-                Some(p) => *p,
+            let price_1h_ago: Decimal = match trend.price_1h_ago {
+                Some(p) => p,
                 None => dec!(0),
             };
             info!("price_1h_ago is {}, sol_price is {}", price_1h_ago, sol_price);
