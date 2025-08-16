@@ -428,7 +428,9 @@ fn should_make_trade(
             info!("price_1h_ago is {}, sol_price is {}", price_1h_ago, sol_price);
             return match position {
                 Position::USDC => sol_price < price_1h_ago,
-                Position::SOL => sol_price > price_1h_ago
+                Position::SOL => state.last_trade_price
+                .map(|last_price| sol_price > last_price)
+                .unwrap_or(false)
             };
         }
     }
