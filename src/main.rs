@@ -119,34 +119,13 @@ async fn execute_single_trade() -> Result<()> {
                 Position::SOL => "USDC",
                 Position::USDC => "SOL",
             };
-            let message = format!(
-                "😎 Trade executed!\n\
-                Position: {0}\n\
-                Profit: {1:.4} {2}\n\
-                Total: {3:.4} USDC\n\
-                Time: {4}",
-                state.position,
-                profit,
-                profit_unit,
-                state.total_profit_usdc,
-                Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
-            );
-            info!("{}", message);
-            line_client.send_message(&message).await?;
+            line_client.send_success_notification(&state, profit, profit_unit).await?;
         }
         Ok(None) => {
             info!("No trading opportunity found");
         }
         Err(e) => {
-            let message = format!(
-                "🥺 Trading error...\n\
-                {}\n\
-                Time: {}",
-                e,
-                Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
-            );
-            error!("Trading error: {}", e);
-            line_client.send_message(&message).await?;
+            line_client.send_error_notification(&e).await?;
             return Err(e);
         }
     }

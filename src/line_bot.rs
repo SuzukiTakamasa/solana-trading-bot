@@ -2,6 +2,7 @@ use chrono::{FixedOffset, TimeZone};
 use chrono_tz::Asia::Tokyo;
 use rust_decimal::prelude::*;
 use crate::firestore::FirestoreDb;
+use crate::trading::TradingState;
 
 use anyhow::{Result, Context};
 use serde::Serialize;
@@ -96,34 +97,43 @@ impl LineClient {
         
         self.send_message(&message).await
     }
-    /*
-    pub async fn send_error_notification(
+    
+    pub async fn send_success_notification(
         &self,
-        error: &str,
-    ) -> Result<()> {
+        state: &TradingState,
+        profit: Decimal,
+        profit_unit: &str,
+    ) -> anyhow::Result<()> {
         let message = format!(
-            "❌ Trading Bot Error\n\n\
-            Error: {}\n\
-            Time: {}",
-            error,
+            "😎 Trade executed!\n\
+            Position: {0}\n\
+            Profit: {1:.4} {2}\n\
+            Total: {3:.4} USDC\n\
+            Time: {4}",
+            state.position,
+            profit,
+            profit_unit,
+            state.total_profit_usdc,
             Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
         );
-        
+        info!("{}", message);
         self.send_message(&message).await
     }
     
-    pub async fn send_startup_notification(
+    pub async fn send_error_notification(
         &self,
+        e: &anyhow::Error,
     ) -> Result<()> {
         let message = format!(
-            "🚀 Trading Bot Started!\n\n\
-            Strategy: SOL-USDC Hourly Trading\n\
+            "🥺 Trading error...\n\
+            {}\n\
             Time: {}",
+            e,
             Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
         );
-        
+        error!("Trading error: {}", e);
         self.send_message(&message).await
     }
-    */
+    
     
 }
