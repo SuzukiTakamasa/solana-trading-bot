@@ -1,5 +1,11 @@
+use chrono::{FixedOffset, TimeZone};
+use chrono_tz::Asia::Tokyo;
+use rust_decimal::prelude::*;
+use crate::firestore::FirestoreDb;
+
 use anyhow::{Result, Context};
 use serde::Serialize;
+use std::sync::Arc;
 use tracing::{info, error};
 
 #[derive(Debug, Serialize)]
@@ -58,6 +64,37 @@ impl LineClient {
         
         info!("LINE message sent successfully");
         Ok(())
+    }
+
+    pub async fn send_daily_high_and_low_sol_prices(&self, db: &Arc<FirestoreDb>) -> anyhow::Result<()> {
+        let price_history = db.get_price_history(24).await?;
+        
+        if price_history.is_empty() {
+            info!("No price history available for the last 24 hours.");
+            return Ok(());
+        }
+        
+        let mut high_price = Decimal::MIN;
+        let mut low_price = Decimal::MAX;
+        
+        if let Some(max) = price_history.iter().map(|p| p.sol_price_usdc).max() {
+            high_price = max;
+        }
+        if let Some(min) = price_history.iter().map(|p| p.sol_price_usdc).min() {
+            low_price = min;
+        }
+        
+        let message = format!(
+            "📈 Daily SOL Price Update\n\n\
+            High: {}\n\
+            Low: {}\n\
+            Time: {}",
+            high_price,
+            low_price,
+            Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
+        );
+        
+        self.send_message(&message).await
     }
     /*
     pub async fn send_error_notification(

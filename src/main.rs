@@ -13,6 +13,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::{info, error};
 use chrono::{FixedOffset, TimeZone};
+use chrono::Timelike;
 use chrono_tz::Asia::Tokyo;
 
 use trading::Position;
@@ -147,6 +148,17 @@ async fn execute_single_trade() -> Result<()> {
             error!("Trading error: {}", e);
             line_client.send_message(&message).await?;
             return Err(e);
+        }
+    }
+
+    // Send daily high/low price update at midnight JST
+    let now_jst = chrono::Utc::now().with_timezone(&Tokyo);
+    if now_jst.hour() == 0 && now_jst.minute() == 0 {
+        // Send daily price update at midnight JST
+        if let Some(db) = firestore {
+            if let Err(e) = line_client.send_daily_high_and_low_sol_prices(&db).await {
+                error!("Failed to send daily price update: {}", e);
+            }
         }
     }
     
