@@ -95,6 +95,17 @@ async fn execute_single_trade() -> Result<()> {
             error!("Failed to cleanup old data: {}", e);
         }
     }
+
+    // Send daily high/low price update at midnight JST
+    let now_jst = chrono::Utc::now().with_timezone(&Tokyo);
+    if now_jst.hour() == 0 {
+        // Send daily price update at midnight JST
+        if let Some(db) = firestore {
+            if let Err(e) = line_client.send_daily_high_and_low_sol_prices(&db).await {
+                error!("Failed to send daily price update: {}", e);
+            }
+        }
+    }
     
     /*
      Check if initial swap is needed (first trade)
@@ -127,17 +138,6 @@ async fn execute_single_trade() -> Result<()> {
         Err(e) => {
             line_client.send_error_notification(&e).await?;
             return Err(e);
-        }
-    }
-
-    // Send daily high/low price update at midnight JST
-    let now_jst = chrono::Utc::now().with_timezone(&Tokyo);
-    if now_jst.hour() == 0 && now_jst.minute() == 0 {
-        // Send daily price update at midnight JST
-        if let Some(db) = firestore {
-            if let Err(e) = line_client.send_daily_high_and_low_sol_prices(&db).await {
-                error!("Failed to send daily price update: {}", e);
-            }
         }
     }
     
