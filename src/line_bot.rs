@@ -1,6 +1,7 @@
 use chrono::{FixedOffset, TimeZone};
 use chrono_tz::Asia::Tokyo;
 use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 use crate::firestore::FirestoreDb;
 use crate::trading::TradingState;
 
@@ -87,11 +88,11 @@ impl LineClient {
         
         let message = format!(
             "📈 Daily SOL Price Update\n\n\
-            High: {}\n\
-            Low: {}\n\
+            High: {:.4}\n\
+            Low: {:.4}\n\
             Time: {}",
-            high_price,
-            low_price,
+            high_price * dec!(1_000_000_000),
+            low_price * dec!(1_000_000_000),
             Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
         );
         
