@@ -125,11 +125,7 @@ async fn execute_single_trade() -> Result<()> {
     // Execute the trade
     match trading::check_and_trade(&wallet, &config, &mut state).await {
         Ok(Some(profit)) => {
-            let profit_unit = match state.position {
-                Position::SOL => "USDC",
-                Position::USDC => "SOL",
-            };
-            line_client.send_success_notification(&state, profit, profit_unit).await?;
+            line_client.send_success_notification(&state, profit).await?;
         }
         Ok(None) => {
             info!("No trading opportunity found");
