@@ -15,8 +15,6 @@ use tracing::{info, error};
 use chrono::Timelike;
 use chrono_tz::Asia::Tokyo;
 
-use trading::Position;
-
 
 #[tokio::main]
 async fn main() -> Result<()> {
