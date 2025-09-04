@@ -68,7 +68,10 @@ impl LineClient {
         Ok(())
     }
 
-    pub async fn send_daily_high_and_low_sol_prices(&self, db: &Arc<FirestoreDb>) -> anyhow::Result<()> {
+    pub async fn send_daily_high_and_low_sol_prices(
+        &self,
+        state: &TradingState,
+        db: &Arc<FirestoreDb>) -> anyhow::Result<()> {
         let price_history = db.get_price_history(24).await?;
         
         if price_history.is_empty() {
@@ -86,13 +89,17 @@ impl LineClient {
             low_price = min;
         }
         
+        let last_trade_price = state.last_trade_price.unwrap_or(dec!(0));
+
         let message = format!(
             "📈 Daily SOL Price Update\n\n\
             High: {:.4}\n\
             Low: {:.4}\n\
+            Last Trade Price: {:.4}\n\
             Time: {}",
             high_price * dec!(1_000_000_000),
             low_price * dec!(1_000_000_000),
+            last_trade_price * dec!(1_000_000_000),
             Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
         );
         

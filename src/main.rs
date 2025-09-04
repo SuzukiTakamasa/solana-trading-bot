@@ -98,7 +98,7 @@ async fn execute_single_trade() -> Result<()> {
     if now_jst.hour() == 0 {
         // Send daily price update at midnight JST
         if let Some(db) = firestore {
-            if let Err(e) = line_client.send_daily_high_and_low_sol_prices(&db).await {
+            if let Err(e) = line_client.send_daily_high_and_low_sol_prices(&state, &db).await {
                 error!("Failed to send daily price update: {}", e);
             }
         }
