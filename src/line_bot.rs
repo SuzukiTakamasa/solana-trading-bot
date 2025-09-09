@@ -115,11 +115,11 @@ impl LineClient {
             "😎 Trade executed!\n\
             Position: {0}\n\
             Profit: {1:.4} USDC\n\
-            Total: {2:.4} USDC\n\
+            Gas Fee: {2:.4} SOL\n\
             Time: {3}",
             state.position,
             profit,
-            state.total_profit_usdc,
+            state.gas_fee.unwrap_or(dec!(0)),
             Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
         );
         info!("{}", message);

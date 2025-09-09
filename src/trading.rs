@@ -41,6 +41,7 @@ pub struct TradingState {
     pub total_trades: i64,
     pub winning_trades: i64,
     pub losing_trades: i64,
+    pub gas_fee: Option<Decimal>,
     pub firestore: Option<Arc<FirestoreDb>>,
 }
 
@@ -56,6 +57,7 @@ impl TradingState {
             total_trades: 0,
             winning_trades: 0,
             losing_trades: 0,
+            gas_fee: None,
             firestore: None,
         }
     }
@@ -76,6 +78,7 @@ impl TradingState {
                 };
                 self.last_trade_price = Some(latest_session.price_at_trade);
                 self.last_trade_timestamp = Some(latest_session.timestamp);
+                self.gas_fee = latest_session.gas_fee;
                 info!("Loaded position from latest trading session: {}, price: {}", self.position, latest_session.price_at_trade);
             }
             
@@ -213,6 +216,8 @@ pub async fn check_and_trade(
                 ).await?;
                 
                 info!("Swap completed: {}", signature);
+
+                let gas_fee = wallet.get_gas_fee(&rpc_client, signature.clone()).await.unwrap_or(0.0);
                 
                 // Get balances after trade
                 let sol_balance_after = wallet.get_sol_balance(&rpc_client).await?;
@@ -256,7 +261,7 @@ pub async fn check_and_trade(
                         usdc_balance_after: Decimal::from_f64_retain(usdc_balance_after).unwrap_or(dec!(0)),
                         price_at_trade: sol_price_in_usdc,
                         slippage: Some(Decimal::from_f64_retain(effective_price).unwrap_or(dec!(0)) - sol_price_in_usdc),
-                        gas_fee: None,
+                        gas_fee: Some(Decimal::from_f64_retain(gas_fee).unwrap_or(dec!(0))),
                         profit_loss,
                         cumulative_profit: Some(state.total_profit_usdc),
                     };
@@ -289,6 +294,8 @@ pub async fn check_and_trade(
                 ).await?;
                 
                 info!("Swap completed: {}", signature);
+
+                let gas_fee = wallet.get_gas_fee(&rpc_client, signature.clone()).await.unwrap_or(0.0);
                 
                 // Get balances after trade
                 let sol_balance_after = wallet.get_sol_balance(&rpc_client).await?;
@@ -333,7 +340,7 @@ pub async fn check_and_trade(
                         usdc_balance_after: Decimal::from_f64_retain(usdc_balance_after).unwrap_or(dec!(0)),
                         price_at_trade: sol_price_in_usdc,
                         slippage: Some(Decimal::from_f64_retain(effective_price).unwrap_or(dec!(0)) - sol_price_in_usdc),
-                        gas_fee: None,
+                        gas_fee: Some(Decimal::from_f64_retain(gas_fee).unwrap_or(dec!(0))),
                         profit_loss,
                         cumulative_profit: Some(state.total_profit_usdc),
                     };

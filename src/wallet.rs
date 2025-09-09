@@ -1,5 +1,7 @@
 use anyhow::{Result, Context};
+use std::str::FromStr;
 use solana_sdk::{
+    signature::Signature,
     pubkey::Pubkey,
     signature::{Keypair, Signer},
     transaction::Transaction,
@@ -76,5 +78,34 @@ impl Wallet {
         .await?;
         
         Ok(account_info.ui_amount.unwrap_or(0.0))
+    }
+
+    pub async fn get_gas_fee(
+        &self,
+        client: &RpcClient,
+        signature: String,
+    ) -> Result<f64> {
+
+        let signature = Signature::from_str(&signature)
+            .map_err(|e| anyhow::anyhow!("Invalid signature: {}", e))?;
+
+        let tx = retry_as_exponential_back_off(
+            || async {
+                client.get_transaction(&signature, solana_transaction_status::UiTransactionEncoding::Json)
+                    .map_err(|e| anyhow::anyhow!("RPC error: {}", e))
+            },
+            "Get gas fee",
+            3,
+            500,
+            Some(Duration::from_secs(10)),
+        )
+        .await?;
+
+        if let Some(meta) = tx.transaction.meta {
+            let fee = meta.fee as f64 / 1_000_000_000.0; // Convert lamports to SOL
+            return Ok(fee);
+        }
+
+        Err(anyhow::anyhow!("Transaction meta not found"))
     }
 }
