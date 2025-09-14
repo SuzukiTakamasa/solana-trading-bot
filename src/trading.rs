@@ -16,6 +16,10 @@ use crate::{
     wallet::Wallet,
 };
 
+fn f64_to_decimal(value: f64, default: u32) -> Decimal {
+    Decimal::from_f64(value).unwrap_or(Decimal::from(default))
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Position {
     SOL,
@@ -230,7 +234,7 @@ pub async fn check_and_trade(
 
                 let profit_loss = if let Some(last_trade_price) = state.last_trade_price {
                     let price_difference = sol_price_in_usdc - last_trade_price;
-                    let profit = price_difference * (Decimal::from_f64_retain(sol_gained).unwrap_or(dec!(0)) * dec!(1_000_000_000));
+                    let profit = price_difference * (f64_to_decimal(sol_gained, 0) * dec!(1_000_000_000)) - f64_to_decimal(gas_fee, 0);
 
                     state.total_profit_usdc += profit;
                     
@@ -255,13 +259,13 @@ pub async fn check_and_trade(
                         position_before: "USDC".to_string(),
                         position_after: "SOL".to_string(),
                         action: "BUY_SOL".to_string(),
-                        sol_balance_before: Decimal::from_f64_retain(sol_balance_before).unwrap_or(dec!(0)),
-                        usdc_balance_before: Decimal::from_f64_retain(usdc_balance_before).unwrap_or(dec!(0)),
-                        sol_balance_after: Decimal::from_f64_retain(sol_balance_after).unwrap_or(dec!(0)),
-                        usdc_balance_after: Decimal::from_f64_retain(usdc_balance_after).unwrap_or(dec!(0)),
+                        sol_balance_before: f64_to_decimal(sol_balance_before, 0),
+                        usdc_balance_before: f64_to_decimal(usdc_balance_before, 0),
+                        sol_balance_after: f64_to_decimal(sol_balance_after, 0),
+                        usdc_balance_after: f64_to_decimal(usdc_balance_after, 0),
                         price_at_trade: sol_price_in_usdc,
-                        slippage: Some(Decimal::from_f64_retain(effective_price).unwrap_or(dec!(0)) - sol_price_in_usdc),
-                        gas_fee: Some(Decimal::from_f64_retain(gas_fee).unwrap_or(dec!(0))),
+                        slippage: Some(f64_to_decimal(effective_price, 0) - sol_price_in_usdc),
+                        gas_fee: Some(f64_to_decimal(gas_fee, 0)),
                         profit_loss,
                         cumulative_profit: Some(state.total_profit_usdc),
                     };
@@ -309,7 +313,7 @@ pub async fn check_and_trade(
                 // Calculate profit if we have a previous price
                 let profit_loss = if let Some(last_price) = state.last_usdc_price {
                     let price_difference = sol_price_in_usdc - last_price;
-                    let profit = price_difference * (Decimal::from_f64_retain(sol_spent).unwrap_or(dec!(0)) * dec!(1_000_000_000));
+                    let profit = price_difference * (f64_to_decimal(sol_spent, 0) * dec!(1_000_000_000)) - f64_to_decimal(gas_fee, 0);
                     state.total_profit_usdc += profit;
                     
 
@@ -334,13 +338,13 @@ pub async fn check_and_trade(
                         position_before: "SOL".to_string(),
                         position_after: "USDC".to_string(),
                         action: "SELL_SOL".to_string(),
-                        sol_balance_before: Decimal::from_f64_retain(sol_balance_before).unwrap_or(dec!(0)),
-                        usdc_balance_before: Decimal::from_f64_retain(usdc_balance_before).unwrap_or(dec!(0)),
-                        sol_balance_after: Decimal::from_f64_retain(sol_balance_after).unwrap_or(dec!(0)),
-                        usdc_balance_after: Decimal::from_f64_retain(usdc_balance_after).unwrap_or(dec!(0)),
+                        sol_balance_before: f64_to_decimal(sol_balance_before, 0),
+                        usdc_balance_before: f64_to_decimal(usdc_balance_before, 0),
+                        sol_balance_after: f64_to_decimal(sol_balance_after, 0),
+                        usdc_balance_after: f64_to_decimal(usdc_balance_after, 0),
                         price_at_trade: sol_price_in_usdc,
-                        slippage: Some(Decimal::from_f64_retain(effective_price).unwrap_or(dec!(0)) - sol_price_in_usdc),
-                        gas_fee: Some(Decimal::from_f64_retain(gas_fee).unwrap_or(dec!(0))),
+                        slippage: Some(f64_to_decimal(effective_price, 0) - sol_price_in_usdc),
+                        gas_fee: Some(f64_to_decimal(gas_fee, 0)),
                         profit_loss,
                         cumulative_profit: Some(state.total_profit_usdc),
                     };
@@ -358,7 +362,7 @@ pub async fn check_and_trade(
                             profit_loss_usdc: profit_loss.unwrap_or(dec!(0)),
                             cumulative_profit_usdc: state.total_profit_usdc,
                             roi_percentage: if usdc_balance_before > 0.0 {
-                                (state.total_profit_usdc / Decimal::from_f64_retain(usdc_balance_before).unwrap_or(dec!(1))) * dec!(100)
+                                state.total_profit_usdc / f64_to_decimal(usdc_balance_before, 0) * dec!(100)
                             } else {
                                 dec!(0)
                             },
@@ -408,8 +412,8 @@ async fn get_current_prices(
     let usdc_price_adjusted = usdc_price / 1_000_000_000.0; // SOL has 9 decimals
     
     Ok((
-        Decimal::from_f64_retain(sol_price_adjusted).unwrap_or(dec!(0)),
-        Decimal::from_f64_retain(usdc_price_adjusted).unwrap_or(dec!(0)),
+        f64_to_decimal(sol_price_adjusted, 0),
+        f64_to_decimal(usdc_price_adjusted, 0),
     ))
 }
 
