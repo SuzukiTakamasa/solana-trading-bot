@@ -120,7 +120,7 @@ impl LineClient {
             Profit(including gas fee): {:.4} USDC\n\
             Time: {}",
             state.position,
-            trade_price,
+            trade_price * dec!(1_000_000_000),
             profit,
             Tokyo.from_utc_datetime(&chrono::Utc::now().naive_utc()).with_timezone(&FixedOffset::east_opt(9 * 3600).unwrap()).format("%Y-%m-%d %H:%M:%S JST")
         );
