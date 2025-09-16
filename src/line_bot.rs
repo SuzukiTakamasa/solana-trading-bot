@@ -117,7 +117,7 @@ impl LineClient {
             "😎 Trade executed!\n\
             Position: {}\n\
             Trade Price: {:.4} USDC\n\
-            Profit(including gas fee): {:.4} USDC\n\
+            Profit: {:.4} USDC\n\
             Time: {}",
             state.position,
             trade_price * dec!(1_000_000_000),
