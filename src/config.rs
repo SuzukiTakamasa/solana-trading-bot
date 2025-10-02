@@ -39,7 +39,7 @@ impl Config {
                 .context("WALLET_PRIVATE_KEY must be set")?,
             
             jupiter_api_url: env::var("JUPITER_API_URL")
-                .unwrap_or_else(|_| "https://quote-api.jup.ag/v6".to_string()),
+                .unwrap_or_else(|_| "https://lite-api.jup.ag/swap/v1".to_string()),
             
             slippage_bps: env::var("SLIPPAGE_BPS")
                 .unwrap_or_else(|_| "50".to_string())
