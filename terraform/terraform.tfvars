@@ -4,7 +4,7 @@ environment       = "production"
 github_repository = "SuzukiTakamasa/solana-trading-bot"
 
 solana_rpc_url  = "https://api.mainnet-beta.solana.com"
-jupiter_api_url = "https://quote-api.jup.ag/v6"
+jupiter_api_url = "https://lite-api.jup.ag/swap/v1"
 
 slippage_bps        = 50
 data_retention_days = 30
